@@ -5,6 +5,13 @@
     </v-btn>
 
     <v-list lines="two">
+      <v-list-subheader v-if="isAdmin">
+        {{ filteredTasks.length }} tareas en total
+      </v-list-subheader>
+      <v-list-subheader v-else>
+        {{ filteredTasks.length }} tareas asignadas
+      </v-list-subheader>
+      
       <v-list-item v-for="task in filteredTasks" :key="task.id" class="mb-2">
         <template v-slot:prepend>
           <v-progress-circular
@@ -19,31 +26,39 @@
         <v-list-item-title>{{ task.title }}</v-list-item-title>
         <v-list-item-subtitle>{{ task.description }}</v-list-item-subtitle>
         
+        <!-- MOSTRAR ASIGNADO A (solo en admin) -->
+        <v-list-item-subtitle v-if="isAdmin" class="mt-1">
+          <v-icon small>mdi-account</v-icon>
+          Asignado a: {{ getEmployeeName(task.assignedTo) }}
+        </v-list-item-subtitle>
+        
         <template v-slot:append>
-          <v-chip :color="getStatusColor(task.status)" class="mr-2">
-            {{ getStatusText(task.status) }}
-          </v-chip>
-          <v-menu v-if="!isAdmin">
-            <template v-slot:activator="{ props }">
-              <v-btn icon v-bind="props">
-                <v-icon>mdi-dots-vertical</v-icon>
-              </v-btn>
-            </template>
-            <v-list>
-              <v-list-item @click="updateProgress(task, 25)">
-                <v-list-item-title>25% Completado</v-list-item-title>
-              </v-list-item>
-              <v-list-item @click="updateProgress(task, 50)">
-                <v-list-item-title>50% Completado</v-list-item-title>
-              </v-list-item>
-              <v-list-item @click="updateProgress(task, 75)">
-                <v-list-item-title>75% Completado</v-list-item-title>
-              </v-list-item>
-              <v-list-item @click="updateProgress(task, 100)">
-                <v-list-item-title>Completado</v-list-item-title>
-              </v-list-item>
-            </v-list>
-          </v-menu>
+          <div class="text-right">
+            <v-chip :color="getStatusColor(task.status)" class="mr-2">
+              {{ getStatusText(task.status) }}
+            </v-chip>
+            <v-menu v-if="!isAdmin">
+              <template v-slot:activator="{ props }">
+                <v-btn icon v-bind="props" size="small">
+                  <v-icon>mdi-dots-vertical</v-icon>
+                </v-btn>
+              </template>
+              <v-list density="compact">
+                <v-list-item @click="updateProgress(task, 25)">
+                  <v-list-item-title>25% Completado</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="updateProgress(task, 50)">
+                  <v-list-item-title>50% Completado</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="updateProgress(task, 75)">
+                  <v-list-item-title>75% Completado</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="updateProgress(task, 100)">
+                  <v-list-item-title>Completado</v-list-item-title>
+                </v-list-item>
+              </v-list>
+            </v-menu>
+          </div>
         </template>
       </v-list-item>
     </v-list>
@@ -181,5 +196,9 @@ const getStatusText = (status) => {
     'completed': 'Completado'
   }
   return texts[status] || status
+}
+const getEmployeeName = (employeeId) => {
+  const employee = employees.value.find(emp => emp.id === employeeId)
+  return employee ? employee.name : `Empleado ${employeeId}`
 }
 </script>

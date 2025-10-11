@@ -25,26 +25,39 @@ app.use(pinia)
 app.use(router)
 app.use(vuetify)
 
-// Inicializar socket después de crear la app
-import socketService from './services/socket.js'
-
-// Obtener el store después de crear pinia
+// Importar store después de crear pinia
 import { useAppStore } from './stores/app.js'
 const store = useAppStore()
 
-// Conectar socket
-const socket = socketService.connect()
-store.setSocket(socket)
+// ✅ LÓGICA CORREGIDA: Establecer usuario según la ruta
+const initializeUser = () => {
+  const path = window.location.pathname
+  
+  console.log('📍 Ruta detectada:', path)
+  
+  if (path.includes('/admin')) {
+    // Usuario ADMIN
+    const adminUser = {
+      id: 1,
+      name: 'Administrador',
+      role: 'admin',
+      email: 'admin@empresa.com'
+    }
+    store.setUser(adminUser)
+    console.log('👑 Usuario ADMIN establecido')
+    return adminUser
+  } else {
+    // Para empleados, NO establecer usuario por defecto
+    // Se mostrará el selector de usuarios
+    console.log('👤 Modo EMPLEADO - Mostrar selector')
+    return null
+  }
+}
+
+// Inicializar usuario según la ruta
+const user = initializeUser()
+
+console.log('🚀 Aplicación montada')
+console.log('📊 Usuario actual:', user)
 
 app.mount('#app')
-
-// Registrar PWA
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').then(registration => {
-      console.log('SW registered: ', registration)
-    }).catch(registrationError => {
-      console.log('SW registration failed: ', registrationError)
-    })
-  })
-}
