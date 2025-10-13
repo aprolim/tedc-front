@@ -11,6 +11,7 @@ export const useAppStore = defineStore('app', () => {
   const isSocketConnected = ref(false)
   const initialized = ref(false)
   const onlineUsers = ref({})
+  const chatViewingStatus = ref({}) // { [partnerId]: boolean }
 
   const socketConnected = computed(() => isSocketConnected.value)
 
@@ -54,7 +55,6 @@ export const useAppStore = defineStore('app', () => {
     })
 
     // Configurar listeners de eventos
-    // REEMPLAZAR la sección del socket.newMessage con esta versión CORREGIDA:
     socket.value.on('newMessage', (message) => {
       console.log('📨 Nuevo mensaje recibido en store')
       console.log('   De:', message.senderId, 'Para:', message.receiverId)
@@ -63,22 +63,8 @@ export const useAppStore = defineStore('app', () => {
       // Agregar el mensaje al store
       messages.value.push(message)
       
-      // ✅ LÓGICA CORREGIDA: Solo marcar como leído si soy el RECEPTOR
-      // y el mensaje es relevante para mi sesión actual
-      if (message.receiverId === user.value?.id) {
-        console.log('💡 Mensaje para mí - El componente decidirá si marcarlo como leído')
-        
-        // Pequeño delay para permitir que el componente se actualice
-        setTimeout(() => {
-          // Emitir un evento para que el componente sepa que hay un nuevo mensaje
-          // El componente manejará el marcado como leído según el contexto
-          socket.value.emit('newMessageProcessed', { 
-            messageId: message.id,
-            receiverId: user.value.id,
-            senderId: message.senderId
-          })
-        }, 100)
-      }
+      // NO marcar automáticamente como leído - la lógica de visibilidad se encargará
+      console.log('💡 Mensaje agregado, se marcará como leído cuando sea visible')
     })
     
     // Actualizar estado de usuarios en línea
@@ -102,22 +88,18 @@ export const useAppStore = defineStore('app', () => {
       
       // Actualizar estado local de mensajes leídos
       messages.value.forEach(msg => {
-        if (data.messageIds === 'all') {
-          // Marcar todos los mensajes del lector como leídos
-          if (msg.senderId === user.value?.id && msg.receiverId === data.readerId) {
-            msg.read = true
-            msg.readAt = new Date()
-            console.log(`✅ Todos los mensajes para ${data.readerId} marcados como leídos`)
-          }
-        } else if (Array.isArray(data.messageIds)) {
-          // Marcar mensajes específicos como leídos
-          if (data.messageIds.includes(msg.id)) {
-            msg.read = true
-            msg.readAt = new Date()
-            console.log(`✅ Mensaje ${msg.id} marcado como leído`)
-          }
+        if (Array.isArray(data.messageIds) && data.messageIds.includes(msg.id)) {
+          msg.read = true
+          msg.readAt = new Date()
+          console.log(`✅ Mensaje ${msg.id} marcado como leído`)
         }
       })
+    })
+    
+    // Estado de visualización del chat
+    socket.value.on('chatViewingStatus', (data) => {
+      console.log(`👀 Estado de visualización: Usuario ${data.userId} ${data.isViewing ? 'viendo' : 'dejó de ver'} chat con ${data.partnerId}`)
+      chatViewingStatus.value[data.userId] = data.isViewing
     })
     
     // Listeners existentes
@@ -140,7 +122,7 @@ export const useAppStore = defineStore('app', () => {
     })
   }
 
-  // Función para marcar mensajes específicos como leídos
+  // En el store, modifica la función markMessagesAsRead:
   const markMessagesAsRead = (senderId, specificMessageIds = null) => {
     if (socket.value && user.value) {
       console.log(`📤 Enviando markMessagesAsRead:`, {
@@ -149,37 +131,65 @@ export const useAppStore = defineStore('app', () => {
         messageIds: specificMessageIds
       })
       
+      // IMPORTANTE: Solo marcar mensajes del OTRO usuario como leídos
+      // No marcar nuestros propios mensajes
       socket.value.emit('markMessagesAsRead', {
         userId: user.value.id,
         senderId: senderId,
         messageIds: specificMessageIds
       })
       
-      // Actualizar estado local inmediatamente para mejor UX
+      // CORREGIDO: Solo actualizar estado local para mensajes del OTRO usuario
       if (specificMessageIds) {
         messages.value.forEach(msg => {
-          if (specificMessageIds.includes(msg.id) && !msg.read) {
+          // SOLO marcar como leído si el mensaje es del OTRO usuario (senderId)
+          // y yo soy el receptor (receiverId)
+          if (specificMessageIds.includes(msg.id) && 
+              msg.senderId === senderId && 
+              msg.receiverId === user.value.id &&
+              !msg.read) {
             msg.read = true
             msg.readAt = new Date()
             console.log(`✅ Mensaje ${msg.id} marcado como leído localmente`)
-          }
-        })
-      } else {
-        // Marcar todos los mensajes no leídos de este sender
-        messages.value.forEach(msg => {
-          if (msg.senderId === senderId && msg.receiverId === user.value.id && !msg.read) {
-            msg.read = true
-            msg.readAt = new Date()
-            console.log(`✅ Todos los mensajes de ${senderId} marcados como leídos`)
           }
         })
       }
     }
   }
 
+  // Función para notificar estado de visualización del chat
+  const setChatViewingStatus = (partnerId, isViewing) => {
+    if (socket.value && user.value) {
+      console.log(`📤 Notificando estado de visualización: ${user.value.id} -> ${partnerId} = ${isViewing}`)
+      socket.value.emit('userViewingChat', {
+        userId: user.value.id,
+        partnerId,
+        isViewing
+      })
+    }
+  }
+
+  // Función para actualizar estado de visualización recibido del servidor
+  const updateChatViewingStatus = (data) => {
+    chatViewingStatus.value[data.userId] = data.isViewing
+  }
+
+  // Función para verificar si el partner está viendo el chat
+  const isPartnerViewingChat = (partnerId) => {
+    return chatViewingStatus.value[partnerId] || false
+  }
+
   // Función para marcar todos los mensajes de un sender como leídos
   const markAllMessagesAsRead = (senderId) => {
-    markMessagesAsRead(senderId, null)
+    const unreadMessages = messages.value.filter(msg => 
+      msg.senderId === senderId && 
+      msg.receiverId === user.value?.id &&
+      !msg.read
+    ).map(msg => msg.id)
+    
+    if (unreadMessages.length > 0) {
+      markMessagesAsRead(senderId, unreadMessages)
+    }
   }
 
   // Función para obtener estado de un usuario
@@ -268,6 +278,7 @@ export const useAppStore = defineStore('app', () => {
     messages.value = []
     userLocations.value = {}
     onlineUsers.value = {}
+    chatViewingStatus.value = {}
     initialized.value = false
     if (socket.value) {
       socket.value.disconnect()
@@ -283,6 +294,7 @@ export const useAppStore = defineStore('app', () => {
     userLocations,
     socket,
     onlineUsers,
+    chatViewingStatus,
     isSocketConnected: socketConnected,
     
     // Setters
@@ -299,6 +311,11 @@ export const useAppStore = defineStore('app', () => {
     getUnreadCountFromUser,
     getAllUnreadMessages,
     getUnreadMessagesFromUser,
+    
+    // Funciones de visibilidad del chat
+    setChatViewingStatus,
+    updateChatViewingStatus,
+    isPartnerViewingChat,
     
     // Funciones de utilidad
     addLocalMessage,
