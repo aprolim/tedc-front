@@ -1,5 +1,5 @@
 <template>
-  <div v-if="store.user">
+  <div v-if="store.isAuthenticated">
     <!-- Dashboard del empleado cuando hay usuario -->
     <v-container fluid>
       <v-row>
@@ -13,10 +13,10 @@
               <v-spacer></v-spacer>
               <v-btn 
                 icon 
-                @click="logout"
-                title="Cambiar usuario"
+                @click="handleLogout"
+                title="Cerrar sesión"
               >
-                <v-icon>mdi-account-switch</v-icon>
+                <v-icon>mdi-logout</v-icon>
               </v-btn>
             </v-card-title>
             <v-card-text>
@@ -44,25 +44,47 @@
     </v-container>
   </div>
   
-  <!-- Selector de usuarios cuando NO hay usuario -->
-  <UserSelector v-else />
+  <!-- ✅ CORREGIDO: Redirigir a login si no está autenticado -->
+  <div v-else class="fill-height d-flex align-center justify-center">
+    <v-progress-circular
+      indeterminate
+      color="primary"
+      size="64"
+    ></v-progress-circular>
+  </div>
 </template>
 
 <script setup>
 import { useAppStore } from '../stores/app.js'
+import { useRouter } from 'vue-router'
 import TaskList from './TaskList.vue'
 import Chat from './Chat.vue'
 import UserLocation from './UserLocation.vue'
-import UserSelector from './UserSelector.vue'
 
 const store = useAppStore()
+const router = useRouter()
 
 const getInitials = (name) => {
   if (!name) return '?'
   return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
 }
 
-const logout = () => {
-  store.setUser(null)
+// ✅ CORREGIDO: Función de logout mejorada
+const handleLogout = async () => {
+  console.log('🚪 Ejecutando logout desde EmployeeDashboard...')
+  
+  try {
+    store.logout()
+    router.push('/login')
+  } catch (error) {
+    console.error('❌ Error en logout:', error)
+    router.push('/login')
+  }
 }
 </script>
+
+<style scoped>
+.fill-height {
+  min-height: 50vh;
+}
+</style>

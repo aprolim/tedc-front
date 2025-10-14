@@ -29,35 +29,42 @@ app.use(vuetify)
 import { useAppStore } from './stores/app.js'
 const store = useAppStore()
 
-// ✅ LÓGICA CORREGIDA: Establecer usuario según la ruta
-const initializeUser = () => {
-  const path = window.location.pathname
+// ✅ MODIFICADO: Lógica de inicialización con autenticación
+const initializeApp = async () => {
+  console.log('🚀 Inicializando aplicación...')
   
-  console.log('📍 Ruta detectada:', path)
+  // Verificar autenticación existente
+  const isAuthenticated = store.checkAuth()
   
-  if (path.includes('/admin')) {
-    // Usuario ADMIN
-    const adminUser = {
-      id: 1,
-      name: 'Administrador',
-      role: 'admin',
-      email: 'admin@empresa.com'
-    }
-    store.setUser(adminUser)
-    console.log('👑 Usuario ADMIN establecido')
-    return adminUser
+  console.log('🔐 Estado de autenticación:', isAuthenticated)
+  console.log('👤 Usuario actual:', store.user)
+  
+  if (isAuthenticated) {
+    console.log('✅ Usuario autenticado:', store.user.name)
+    
+    // Redirigir según rol después de montar
+    setTimeout(() => {
+      if (store.isAdmin) {
+        if (!window.location.pathname.includes('/admin')) {
+          router.push('/admin')
+        }
+      } else {
+        if (!window.location.pathname.includes('/employee')) {
+          router.push('/employee')
+        }
+      }
+    }, 100)
   } else {
-    // Para empleados, NO establecer usuario por defecto
-    // Se mostrará el selector de usuarios
-    console.log('👤 Modo EMPLEADO - Mostrar selector')
-    return null
+    console.log('🔐 No autenticado, mostrando login')
+    if (!window.location.pathname.includes('/login')) {
+      router.push('/login')
+    }
   }
+  
+  console.log('🎯 Aplicación lista')
 }
 
-// Inicializar usuario según la ruta
-const user = initializeUser()
-
-console.log('🚀 Aplicación montada')
-console.log('📊 Usuario actual:', user)
-
-app.mount('#app')
+// Inicializar y montar
+initializeApp().then(() => {
+  app.mount('#app')
+})

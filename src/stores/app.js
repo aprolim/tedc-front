@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import socketService from '../services/socket.js'
+import { api } from '../services/api.js'
 
 export const useAppStore = defineStore('app', () => {
   const user = ref(null)
@@ -11,12 +12,85 @@ export const useAppStore = defineStore('app', () => {
   const isSocketConnected = ref(false)
   const initialized = ref(false)
   const onlineUsers = ref({})
-  const chatViewingStatus = ref({}) // { [partnerId]: boolean }
+  const chatViewingStatus = ref({})
+  const loading = ref(false)
+  const authError = ref(null)
 
   const socketConnected = computed(() => isSocketConnected.value)
 
+  // ✅ NUEVO: Función de login
+  const login = async (email, password) => {
+    loading.value = true
+    authError.value = null
+    
+    try {
+      console.log('🔐 Intentando login con:', email)
+      
+      const response = await api.post('/auth/login', {
+        email,
+        password
+      })
+      
+      if (response.success) {
+        console.log('✅ Login exitoso:', response.user.name)
+        setUser(response.user)
+        
+        // Guardar en localStorage para persistencia
+        localStorage.setItem('user', JSON.stringify(response.user))
+        localStorage.setItem('token', response.token)
+        
+        return { success: true, user: response.user }
+      } else {
+        throw new Error(response.message || 'Error en el login')
+      }
+    } catch (error) {
+      console.error('❌ Error en login:', error)
+      authError.value = error.message || 'Error de autenticación'
+      return { success: false, error: error.message }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // ✅ NUEVO: Función de logout
+  // ✅ CORREGIDO: Función de logout mejorada
+  const logout = () => {
+    console.log('🚪 Ejecutando logout en store...')
+    
+    // Guardar referencia al usuario actual para logging
+    const currentUserName = user.value?.name
+    
+    // 1. Desconectar socket primero
+    if (socket.value) {
+      console.log('🔌 Desconectando socket...')
+      socket.value.disconnect()
+      socket.value = null
+    }
+    
+    // 2. Limpiar localStorage
+    console.log('🗑️ Limpiando localStorage...')
+    localStorage.removeItem('user')
+    localStorage.removeItem('token')
+    
+    // 3. Resetear estado reactivo
+    console.log('🔄 Reseteando estado...')
+    user.value = null
+    tasks.value = []
+    messages.value = []
+    userLocations.value = {}
+    onlineUsers.value = {}
+    chatViewingStatus.value = {}
+    initialized.value = false
+    isSocketConnected.value = false
+    authError.value = null
+    loading.value = false
+    
+    console.log(`✅ Logout completado para: ${currentUserName || 'Usuario'}`)
+  }
+
+  // ✅ MODIFICADO: setUser ahora verifica si ya está inicializado
   const setUser = (userData) => {
-    if (user.value && user.value.id === userData.id) {
+    if (user.value && user.value.id === userData?.id) {
       console.log('⚠️ Usuario ya establecido, ignorando...')
       return
     }
@@ -24,10 +98,30 @@ export const useAppStore = defineStore('app', () => {
     console.log('👤 SET USER llamado con:', userData)
     user.value = userData
     
-    if (!initialized.value) {
+    if (userData && !initialized.value) {
       initializeSocket()
       initialized.value = true
     }
+  }
+
+  // ✅ NUEVO: Verificar autenticación al cargar la app
+  const checkAuth = () => {
+    const savedUser = localStorage.getItem('user')
+    const savedToken = localStorage.getItem('token')
+    
+    if (savedUser && savedToken) {
+      try {
+        const userData = JSON.parse(savedUser)
+        console.log('🔍 Usuario encontrado en localStorage:', userData.name)
+        setUser(userData)
+        return true
+      } catch (error) {
+        console.error('❌ Error cargando usuario de localStorage:', error)
+        logout()
+        return false
+      }
+    }
+    return false
   }
 
   const initializeSocket = () => {
@@ -60,45 +154,27 @@ export const useAppStore = defineStore('app', () => {
       console.log('   De:', message.senderId, 'Para:', message.receiverId)
       console.log('   Contenido:', message.content)
       
-      // Agregar el mensaje al store
       messages.value.push(message)
-      
-      // NO marcar automáticamente como leído - la lógica de visibilidad se encargará
-      console.log('💡 Mensaje agregado, se marcará como leído cuando sea visible')
     })
     
-    // Actualizar estado de usuarios en línea
     socket.value.on('userStatusUpdate', (data) => {
       console.log('🔄 Actualizando estado de usuarios:', data)
-      console.log('   Usuario afectado:', data.userId, 'Estado:', data.status)
-      console.log('   Total de usuarios en línea:', Object.values(data.onlineUsers).filter(u => u.status === 'online').length)
-      
-      // Actualizar el estado completo de usuarios en línea
       onlineUsers.value = data.onlineUsers
-      
-      // Log para debugging
-      const onlineCount = Object.values(onlineUsers.value).filter(u => u.status === 'online').length
-      console.log(`📊 Estado actual - Usuarios en línea: ${onlineCount}`)
     })
     
-    // Mensajes marcados como leídos
     socket.value.on('messagesRead', (data) => {
       console.log('📖 Mensajes marcados como leídos por:', data.readerId)
-      console.log('   Mensajes afectados:', data.messageIds)
       
-      // Actualizar estado local de mensajes leídos
       messages.value.forEach(msg => {
         if (Array.isArray(data.messageIds) && data.messageIds.includes(msg.id)) {
           msg.read = true
           msg.readAt = new Date()
-          console.log(`✅ Mensaje ${msg.id} marcado como leído`)
         }
       })
     })
     
-    // Estado de visualización del chat
     socket.value.on('chatViewingStatus', (data) => {
-      console.log(`👀 Estado de visualización: Usuario ${data.userId} ${data.isViewing ? 'viendo' : 'dejó de ver'} chat con ${data.partnerId}`)
+      console.log(`👀 Estado de visualización: Usuario ${data.userId} ${data.isViewing ? 'viendo' : 'dejó de ver'} chat`)
       chatViewingStatus.value[data.userId] = data.isViewing
     })
     
@@ -109,7 +185,7 @@ export const useAppStore = defineStore('app', () => {
     })
     
     socket.value.on('taskUpdated', (task) => {
-      console.log('🔄 Tarea actualizada:', task.title, task.progress + '%')
+      console.log('🔄 Tarea actualizada:', task.title)
       const index = tasks.value.findIndex(t => t.id === task.id)
       if (index !== -1) {
         tasks.value[index] = task
@@ -122,45 +198,31 @@ export const useAppStore = defineStore('app', () => {
     })
   }
 
-  // En el store, modifica la función markMessagesAsRead:
+  // Funciones existentes (sin cambios)
   const markMessagesAsRead = (senderId, specificMessageIds = null) => {
     if (socket.value && user.value) {
-      console.log(`📤 Enviando markMessagesAsRead:`, {
-        userId: user.value.id,
-        senderId: senderId,
-        messageIds: specificMessageIds
-      })
-      
-      // IMPORTANTE: Solo marcar mensajes del OTRO usuario como leídos
-      // No marcar nuestros propios mensajes
       socket.value.emit('markMessagesAsRead', {
         userId: user.value.id,
         senderId: senderId,
         messageIds: specificMessageIds
       })
       
-      // CORREGIDO: Solo actualizar estado local para mensajes del OTRO usuario
       if (specificMessageIds) {
         messages.value.forEach(msg => {
-          // SOLO marcar como leído si el mensaje es del OTRO usuario (senderId)
-          // y yo soy el receptor (receiverId)
           if (specificMessageIds.includes(msg.id) && 
               msg.senderId === senderId && 
               msg.receiverId === user.value.id &&
               !msg.read) {
             msg.read = true
             msg.readAt = new Date()
-            console.log(`✅ Mensaje ${msg.id} marcado como leído localmente`)
           }
         })
       }
     }
   }
 
-  // Función para notificar estado de visualización del chat
   const setChatViewingStatus = (partnerId, isViewing) => {
     if (socket.value && user.value) {
-      console.log(`📤 Notificando estado de visualización: ${user.value.id} -> ${partnerId} = ${isViewing}`)
       socket.value.emit('userViewingChat', {
         userId: user.value.id,
         partnerId,
@@ -169,17 +231,14 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  // Función para actualizar estado de visualización recibido del servidor
   const updateChatViewingStatus = (data) => {
     chatViewingStatus.value[data.userId] = data.isViewing
   }
 
-  // Función para verificar si el partner está viendo el chat
   const isPartnerViewingChat = (partnerId) => {
     return chatViewingStatus.value[partnerId] || false
   }
 
-  // Función para marcar todos los mensajes de un sender como leídos
   const markAllMessagesAsRead = (senderId) => {
     const unreadMessages = messages.value.filter(msg => 
       msg.senderId === senderId && 
@@ -192,18 +251,15 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  // Función para obtener estado de un usuario
   const isUserOnline = (userId) => {
     return onlineUsers.value[userId]?.status === 'online'
   }
 
-  // Función para obtener el último tiempo de actividad de un usuario
   const getUserLastSeen = (userId) => {
     const userData = onlineUsers.value[userId]
     return userData ? userData.lastSeen : null
   }
 
-  // Función para contar mensajes no leídos de un usuario específico
   const getUnreadCountFromUser = (senderId) => {
     return messages.value.filter(msg => 
       msg.senderId === senderId && 
@@ -212,7 +268,6 @@ export const useAppStore = defineStore('app', () => {
     ).length
   }
 
-  // Función para obtener todos los mensajes no leídos
   const getAllUnreadMessages = () => {
     return messages.value.filter(msg => 
       msg.receiverId === user.value?.id &&
@@ -220,7 +275,6 @@ export const useAppStore = defineStore('app', () => {
     )
   }
 
-  // Función para obtener mensajes no leídos de un usuario específico
   const getUnreadMessagesFromUser = (senderId) => {
     return messages.value.filter(msg => 
       msg.senderId === senderId && 
@@ -237,7 +291,6 @@ export const useAppStore = defineStore('app', () => {
   const setMessages = (messagesData) => {
     console.log('💾 Guardando mensajes:', messagesData.length)
     
-    // Preservar el estado de 'read' de los mensajes existentes
     const existingMessagesMap = new Map()
     messages.value.forEach(msg => {
       if (msg.read) {
@@ -245,7 +298,6 @@ export const useAppStore = defineStore('app', () => {
       }
     })
     
-    // Aplicar el estado de 'read' a los nuevos mensajes
     messagesData.forEach(msg => {
       const existingState = existingMessagesMap.get(msg.id)
       if (existingState) {
@@ -261,7 +313,6 @@ export const useAppStore = defineStore('app', () => {
     userLocations.value[data.userId] = data.location
   }
 
-  // Función para agregar un mensaje localmente (para testing)
   const addLocalMessage = (message) => {
     messages.value.push({
       ...message,
@@ -271,7 +322,6 @@ export const useAppStore = defineStore('app', () => {
     })
   }
 
-  // Función para limpiar todos los datos (para testing)
   const clearData = () => {
     user.value = null
     tasks.value = []
@@ -295,7 +345,14 @@ export const useAppStore = defineStore('app', () => {
     socket,
     onlineUsers,
     chatViewingStatus,
+    loading,
+    authError,
     isSocketConnected: socketConnected,
+    
+    // ✅ NUEVAS: Funciones de autenticación
+    login,
+    logout,
+    checkAuth,
     
     // Setters
     setUser,
@@ -325,6 +382,7 @@ export const useAppStore = defineStore('app', () => {
     currentUser: computed(() => user.value),
     totalUnreadCount: computed(() => getAllUnreadMessages().length),
     isAdmin: computed(() => user.value?.role === 'admin'),
-    isEmployee: computed(() => user.value?.role === 'employee')
+    isEmployee: computed(() => user.value?.role === 'employee'),
+    isAuthenticated: computed(() => !!user.value) // ✅ NUEVO
   }
 })
