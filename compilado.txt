@@ -1,0 +1,2651 @@
+COMPILADO DE ARCHIVOS 
+ 
+ 
+================================= 
+.gitignore 
+================================= 
+ 
+node_modules 
+================================= 
+index.html 
+================================= 
+ 
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sistema de Tareas</title>
+    <meta name="description" content="Sistema de gestión de tareas y comunicación">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#1867C0">
+    
+    <!-- Meta tags CORREGIDOS -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <!-- Eliminado: <meta name="apple-mobile-web-app-capable" content="yes"> -->
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html> 
+================================= 
+package.json 
+================================= 
+ 
+{
+  "name": "tareas-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.3.4",
+    "vue-router": "^4.2.4",
+    "pinia": "^2.1.6",
+    "vuetify": "^3.3.10",
+    "socket.io-client": "^4.7.2",
+    "@mdi/js": "^7.3.67"
+  },
+  "devDependencies": {
+    "vite": "^4.4.5",
+    "vite-plugin-pwa": "^0.16.4",
+    "@vitejs/plugin-vue": "^4.3.4"
+  }
+} 
+================================= 
+vite.config.js 
+================================= 
+ 
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import { VitePWA } from 'vite-plugin-pwa'
+
+export default defineConfig({
+  plugins: [
+    vue(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      injectRegister: 'auto',
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}']
+      },
+      manifest: {
+        name: 'Sistema de Tareas',
+        short_name: 'TareasApp',
+        description: 'Sistema de gestión de tareas y comunicación en tiempo real',
+        theme_color: '#1867C0',
+        background_color: '#ffffff',
+        display: 'standalone',
+        start_url: '/',
+        icons: [
+          {
+            src: 'pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png'
+          }
+        ]
+      }
+    })
+  ],
+  resolve: {
+    alias: {
+      '@': '/src',
+    },
+  },
+  root: '.',
+  build: {
+    rollupOptions: {
+      input: './index.html'
+    }
+  },
+  optimizeDeps: {
+    include: ['vue', 'vue-router', 'pinia', 'vuetify', 'socket.io-client']
+  },
+  // Agregar esta configuración para desarrollo
+  server: {
+    host: true
+  }
+}) 
+================================= 
+public\manifest.json 
+================================= 
+ 
+{
+  "name": "Sistema de Tareas",
+  "short_name": "TareasApp",
+  "description": "Sistema de gestión de tareas y comunicación en tiempo real",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1867C0",
+  "icons": [
+    {
+      "src": "pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+} 
+================================= 
+src\App.vue 
+================================= 
+ 
+<template>
+  <v-app>
+    <v-app-bar app color="primary" dark v-if="store.user">
+      <v-toolbar-title>Sistema de Tareas</v-toolbar-title>
+      <v-spacer></v-spacer>
+      <div class="d-flex align-center">
+        <v-avatar color="white" size="32" class="mr-2">
+          <span class="primary--text">{{ getInitials(store.user.name) }}</span>
+        </v-avatar>
+        <span class="mr-4">{{ store.user.name }}</span>
+        <v-btn text @click="logout">
+          <v-icon left>mdi-logout</v-icon>
+          Salir
+        </v-btn>
+      </div>
+    </v-app-bar>
+
+    <v-main>
+      <router-view></router-view>
+    </v-main>
+  </v-app>
+</template>
+
+<script setup>
+import { useAppStore } from './stores/app.js'
+
+const store = useAppStore()
+
+const getInitials = (name) => {
+  if (!name) return '?'
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+}
+
+const logout = () => {
+  store.setUser(null)
+  // NO redirigir automáticamente
+  // El usuario decidirá a dónde ir
+}
+</script> 
+================================= 
+src\main.js 
+================================= 
+ 
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import App from './App.vue'
+import router from './router'
+
+// Vuetify
+import { createVuetify } from 'vuetify'
+import * as components from 'vuetify/components'
+import * as directives from 'vuetify/directives'
+import 'vuetify/styles'
+import '@mdi/js'
+
+const vuetify = createVuetify({
+  components,
+  directives,
+  theme: {
+    defaultTheme: 'light'
+  }
+})
+
+const app = createApp(App)
+const pinia = createPinia()
+
+app.use(pinia)
+app.use(router)
+app.use(vuetify)
+
+// Importar store después de crear pinia
+import { useAppStore } from './stores/app.js'
+const store = useAppStore()
+
+// ✅ LÓGICA CORREGIDA: Establecer usuario según la ruta
+const initializeUser = () => {
+  const path = window.location.pathname
+  
+  console.log('📍 Ruta detectada:', path)
+  
+  if (path.includes('/admin')) {
+    // Usuario ADMIN
+    const adminUser = {
+      id: 1,
+      name: 'Administrador',
+      role: 'admin',
+      email: 'admin@empresa.com'
+    }
+    store.setUser(adminUser)
+    console.log('👑 Usuario ADMIN establecido')
+    return adminUser
+  } else {
+    // Para empleados, NO establecer usuario por defecto
+    // Se mostrará el selector de usuarios
+    console.log('👤 Modo EMPLEADO - Mostrar selector')
+    return null
+  }
+}
+
+// Inicializar usuario según la ruta
+const user = initializeUser()
+
+console.log('🚀 Aplicación montada')
+console.log('📊 Usuario actual:', user)
+
+app.mount('#app') 
+================================= 
+src\router.js 
+================================= 
+ 
+import { createRouter, createWebHistory } from 'vue-router'
+import AdminDashboard from './components/AdminDashboard.vue'
+import EmployeeDashboard from './components/EmployeeDashboard.vue'
+
+const routes = [
+  { 
+    path: '/admin', 
+    component: AdminDashboard,
+    meta: { requiresAuth: false}
+  },
+  { 
+    path: '/employee', 
+    component: EmployeeDashboard,
+    meta: { requiresAuth: false } // No requiere auth porque mostramos selector
+  },
+  { 
+    path: '/', 
+    redirect: '/employee'
+  }
+]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes
+})
+
+// Opcional: Guard de navegación
+// router.beforeEach((to, from, next) => {
+//   // Si va a admin y no hay usuario, redirigir a employee
+//   if (to.path === '/admin' && !localStorage.getItem('user')) {
+//     next('/employee')
+//   } else {
+//     next()
+//   }
+// })
+
+export default router 
+================================= 
+src\components\AdminDashboard.vue 
+================================= 
+ 
+<template>
+  <v-container fluid>
+    <v-row>
+      <v-col cols="12" md="8">
+        <v-card>
+          <v-card-title>Gestión de Tareas</v-card-title>
+          <v-card-text>
+            <TaskList :is-admin="true" />
+          </v-card-text>
+        </v-card>
+      </v-col>
+      
+      <v-col cols="12" md="4">
+        <v-card>
+          <v-card-title>Chat con Empleados</v-card-title>
+          <v-card-text>
+            <Chat :is-admin="true" />
+          </v-card-text>
+        </v-card>
+        
+        <v-card class="mt-4">
+          <v-card-title>Ubicaciones</v-card-title>
+          <v-card-text>
+            <UserLocation :is-admin="true" />
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
+  </v-container>
+</template>
+
+<script setup>
+import TaskList from './TaskList.vue'
+import Chat from './Chat.vue'
+import UserLocation from './UserLocation.vue'
+</script> 
+================================= 
+src\components\Chat.vue 
+================================= 
+ 
+<template>
+  <div class="chat-wrapper">
+    <!-- Lista de empleados (solo admin) -->
+    <div v-if="isAdmin" class="employee-list-container">
+      <v-card class="employee-list-card">
+        <v-card-title class="employee-list-header">
+          <span>Empleados del equipo</span>
+          <v-chip :color="onlineCount > 0 ? 'green' : 'grey'" size="small" variant="flat">
+            {{ onlineCount }} en línea
+          </v-chip>
+        </v-card-title>
+        
+        <v-card-text class="pa-0">
+          <v-list class="employee-list">
+            <v-list-item
+              v-for="employee in sortedEmployees"
+              :key="employee.id"
+              @click="selectEmployee(employee)"
+              :class="{ 
+                'selected-employee': selectedEmployee?.id === employee.id,
+                'has-unread': hasUnreadMessages(employee.id)
+              }"
+              class="employee-list-item"
+            >
+              <template v-slot:prepend>
+                <div class="employee-avatar-container">
+                  <v-avatar color="primary" size="48">
+                    <span class="text-white avatar-text">{{ getInitials(employee.name) }}</span>
+                  </v-avatar>
+                  <v-badge
+                    :color="getUserStatusColor(employee.id)"
+                    dot
+                    class="status-badge"
+                    bordered
+                  />
+                </div>
+              </template>
+
+              <v-list-item-title class="employee-name">
+                {{ employee.name }}
+                <v-icon v-if="hasUnreadMessages(employee.id)" color="primary" size="small" class="ml-1">
+                  mdi-message-alert
+                </v-icon>
+              </v-list-item-title>
+              
+              <v-list-item-subtitle class="employee-status" :class="getUserStatusTextColor(employee.id)">
+                {{ getUserStatusText(employee.id) }}
+              </v-list-item-subtitle>
+
+              <template v-slot:append>
+                <div class="employee-meta">
+                  <v-badge 
+                    v-if="getUnreadCount(employee.id) > 0"
+                    :content="getUnreadCount(employee.id)"
+                    color="red"
+                    class="unread-badge"
+                  />
+                  <div v-if="getLastMessageTime(employee.id)" class="last-message-time">
+                    {{ formatLastMessageTime(employee.id) }}
+                  </div>
+                </div>
+              </template>
+            </v-list-item>
+          </v-list>
+        </v-card-text>
+      </v-card>
+    </div>
+
+    <!-- Área de chat -->
+    <div v-if="(!isAdmin || selectedEmployee)" class="chat-area" ref="chatArea">
+      <!-- Header del chat -->
+      <div class="chat-header">
+        <div class="chat-partner-info">
+          <div class="partner-avatar-container">
+            <v-avatar :color="isAdmin ? 'primary' : 'blue-darken-2'" size="44">
+              <span class="text-white avatar-text">
+                {{ isAdmin ? getInitials(selectedEmployee?.name) : 'A' }}
+              </span>
+            </v-avatar>
+            <v-badge 
+              :color="getUserStatusColor(chatPartnerId)"
+              dot
+              class="status-badge"
+              bordered
+            />
+            <div 
+              v-if="isPartnerViewingChat && store.isUserOnline(chatPartnerId)"
+              class="viewing-indicator-header"
+              title="Está viendo el chat"
+            >
+              <v-icon size="14" color="green">mdi-eye</v-icon>
+            </div>
+          </div>
+          <div class="partner-details">
+            <div class="partner-name">
+              {{ isAdmin ? selectedEmployee?.name : 'Administrador' }}
+            </div>
+            <div class="partner-status" :class="getUserStatusTextColor(chatPartnerId)">
+              {{ getUserStatusText(chatPartnerId) }}
+              <span v-if="isPartnerViewingChat && store.isUserOnline(chatPartnerId)" class="viewing-text">
+                • Viendo el chat
+              </span>
+              <span v-else-if="store.isUserOnline(chatPartnerId)" class="online-text">
+                • En línea
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <v-btn 
+          v-if="hasUnreadMessages(chatPartnerId)"
+          icon 
+          size="small"
+          @click="markAllAsRead"
+          :loading="markingAsRead"
+          title="Marcar todos como leídos"
+          class="mark-read-btn"
+        >
+          <v-icon>mdi-check-all</v-icon>
+        </v-btn>
+      </div>
+
+      <!-- Lista de mensajes -->
+      <div class="messages-container" ref="messagesContainer" @scroll="onMessagesScroll">
+        <div v-if="filteredMessages.length === 0" class="empty-chat">
+          <v-icon size="48" color="grey-lighten-1">mdi-forum-outline</v-icon>
+          <div class="empty-title">No hay mensajes aún</div>
+          <div class="empty-subtitle">¡Envía el primer mensaje!</div>
+        </div>
+        
+        <div
+          v-for="message in filteredMessages"
+          :key="message.id"
+          :data-message-id="message.id"
+          :class="['message', message.senderId === currentUserId ? 'sent' : 'received']"
+        >
+          <div class="message-bubble">
+            <div class="message-content">{{ message.content }}</div>
+            <div class="message-meta">
+              <span class="message-time">{{ formatTime(message.timestamp) }}</span>
+              <div v-if="message.senderId === currentUserId" class="message-status">
+                <v-icon 
+                  v-if="message.read" 
+                  size="14" 
+                  color="blue-darken-2"
+                  title="Leído"
+                >mdi-check-all</v-icon>
+                <v-icon 
+                  v-else-if="isPartnerViewingChat && store.isUserOnline(chatPartnerId)"
+                  size="14" 
+                  color="green"
+                  title="Viendo..."
+                >mdi-eye</v-icon>
+                <v-icon 
+                  v-else 
+                  size="14" 
+                  color="grey"
+                  title="Enviado"
+                >mdi-check</v-icon>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Estados de los mensajes -->
+          <div 
+            v-if="message.senderId === currentUserId && 
+                  !message.read && 
+                  isPartnerViewingChat && 
+                  store.isUserOnline(chatPartnerId)"
+            class="viewing-indicator"
+          >
+            <v-icon size="12" color="green">mdi-eye</v-icon>
+            <span>Viendo...</span>
+          </div>
+          
+          <div v-if="message.senderId === currentUserId && message.read" class="read-indicator">
+            <v-icon size="12" color="blue-darken-2">mdi-check-all</v-icon>
+            <span>Leído {{ formatReadTime(message.readAt) }}</span>
+          </div>
+        </div>
+
+        <div 
+          v-if="unreadMessagesCount > 0 && !isAtBottom" 
+          class="new-messages-indicator"
+          @click="scrollToBottomAndMarkRead"
+        >
+          <v-chip color="primary" size="small">
+            <v-icon start size="small">mdi-arrow-down</v-icon>
+            {{ unreadMessagesCount }} nuevo{{ unreadMessagesCount > 1 ? 's' : '' }}
+          </v-chip>
+        </div>
+      </div>
+
+      <!-- Input de mensajes -->
+      <div class="message-input-area">
+        <v-text-field
+          v-model="newMessage"
+          placeholder="Escribe un mensaje..."
+          @keypress.enter="sendMessage"
+          append-inner-icon="mdi-send"
+          @click:append-inner="sendMessage"
+          :loading="sendingMessage"
+          :disabled="!store.isSocketConnected || sendingMessage"
+          hide-details
+          density="comfortable"
+          variant="outlined"
+          class="message-input"
+        />
+        
+        <div class="connection-status">
+          <v-icon 
+            :color="store.isSocketConnected ? 'green' : 'red'" 
+            size="small"
+            class="status-icon"
+          >mdi-circle</v-icon>
+          {{ connectionStatus }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Estado sin selección (solo admin) -->
+    <div v-else-if="isAdmin" class="no-selection-state">
+      <v-icon size="64" color="grey-lighten-1">mdi-account-multiple</v-icon>
+      <div class="no-selection-text">Selecciona un empleado para comenzar a chatear</div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue'
+import { useAppStore } from '../stores/app.js'
+import { api } from '../services/api.js'
+
+const props = defineProps(['isAdmin'])
+const store = useAppStore()
+
+// Reactive data
+const employees = ref([])
+const selectedEmployee = ref(null)
+const newMessage = ref('')
+const messagesContainer = ref(null)
+const chatArea = ref(null)
+const sendingMessage = ref(false)
+const markingAsRead = ref(false)
+const isAtBottom = ref(true)
+const autoScrollEnabled = ref(true)
+const isChatVisible = ref(false)
+const visibilityObserver = ref(null)
+
+// Estado de visibilidad del partner
+const isPartnerViewingChat = ref(false)
+
+// Estados para controlar interacción real
+const userInteractedWithChat = ref(false)
+const lastInteractionTime = ref(null)
+const partnerViewingTimeout = ref(null)
+
+// Debounce timers
+let scrollDebounceTimer = null
+let visibilityDebounceTimer = null
+let markReadDebounceTimer = null
+let interactionTimer = null
+
+// Computed properties
+const currentUserId = computed(() => store.user?.id)
+const chatPartnerId = computed(() => props.isAdmin ? selectedEmployee.value?.id : 1)
+
+const onlineCount = computed(() => {
+  return Object.values(store.onlineUsers).filter(user => user.status === 'online').length
+})
+
+// Contar todos los mensajes no leídos
+const unreadMessagesCount = computed(() => {
+  if (!chatPartnerId.value) return 0
+  return store.getUnreadCountFromUser(chatPartnerId.value)
+})
+
+const sortedEmployees = computed(() => {
+  return [...employees.value].sort((a, b) => {
+    const unreadA = getUnreadCount(a.id)
+    const unreadB = getUnreadCount(b.id)
+    
+    if (unreadA > 0 && unreadB === 0) return -1
+    if (unreadA === 0 && unreadB > 0) return 1
+    
+    const timeA = getLastMessageTime(a.id) || 0
+    const timeB = getLastMessageTime(b.id) || 0
+    return timeB - timeA
+  })
+})
+
+const filteredMessages = computed(() => {
+  if (!currentUserId.value || !chatPartnerId.value) return []
+  
+  return store.messages.filter(msg => 
+    (msg.senderId === currentUserId.value && msg.receiverId === chatPartnerId.value) ||
+    (msg.senderId === chatPartnerId.value && msg.receiverId === currentUserId.value)
+  ).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+})
+
+const connectionStatus = computed(() => {
+  if (!store.isSocketConnected) return 'Conectando al servidor...'
+  return 'Conectado - Mensajes en tiempo real'
+})
+
+// Computed para saber si el usuario está viendo ESTE chat específico
+const isUserViewingThisChat = computed(() => {
+  return isChatVisible.value && 
+         document.visibilityState === 'visible' && 
+         userInteractedWithChat.value
+})
+
+// Status helpers
+const getUserStatusColor = (userId) => {
+  return store.isUserOnline(userId) ? 'green' : 'red'
+}
+
+const getUserStatusTextColor = (userId) => {
+  return store.isUserOnline(userId) ? 'text-green' : 'text-grey'
+}
+
+const getUserStatusText = (userId) => {
+  if (store.isUserOnline(userId)) return 'En línea'
+  
+  const lastSeen = store.getUserLastSeen(userId)
+  if (!lastSeen) return 'Desconectado'
+  
+  const now = new Date()
+  const lastSeenDate = new Date(lastSeen)
+  const diffMs = now - lastSeenDate
+  const diffMins = Math.floor(diffMs / 60000)
+  
+  if (diffMins < 1) return 'Recientemente'
+  if (diffMins < 60) return `Hace ${diffMins} min`
+  return `Visto ${lastSeenDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
+}
+
+// Message helpers - Solo mensajes del partner que no he leído
+const getVisibleUnreadMessageIds = () => {
+  if (!chatPartnerId.value || !messagesContainer.value) return []
+  
+  const container = messagesContainer.value
+  const visibleMessages = []
+  
+  // Obtener todos los elementos de mensaje
+  const messageElements = container.querySelectorAll('.message')
+  
+  messageElements.forEach(element => {
+    const rect = element.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    
+    // Criterio estricto de visibilidad - mensaje debe estar completamente visible
+    const isFullyVisible = (
+      rect.top >= containerRect.top && 
+      rect.bottom <= containerRect.bottom &&
+      rect.height > 0
+    )
+    
+    if (isFullyVisible) {
+      const messageId = parseInt(element.dataset.messageId)
+      const message = filteredMessages.value.find(msg => msg.id === messageId)
+      
+      // SOLO mensajes del partner que yo no he leído
+      if (message && 
+          message.senderId === chatPartnerId.value && 
+          message.receiverId === currentUserId.value &&
+          !message.read) {
+        visibleMessages.push(message.id)
+      }
+    }
+  })
+  
+  console.log(`👀 ${visibleMessages.length} mensajes visibles no leídos DEL PARTNER`)
+  return visibleMessages
+}
+
+const hasUnreadMessages = (employeeId) => {
+  return getUnreadCount(employeeId) > 0
+}
+
+const getUnreadCount = (employeeId) => {
+  return store.getUnreadCountFromUser(employeeId)
+}
+
+const getLastMessageTime = (employeeId) => {
+  const messagesWithEmployee = store.messages.filter(msg => 
+    (msg.senderId === employeeId && msg.receiverId === currentUserId.value) ||
+    (msg.senderId === currentUserId.value && msg.receiverId === employeeId)
+  )
+  
+  if (messagesWithEmployee.length === 0) return null
+  
+  const lastMessage = messagesWithEmployee.reduce((latest, current) => {
+    return new Date(current.timestamp) > new Date(latest.timestamp) ? current : latest
+  })
+  
+  return new Date(lastMessage.timestamp)
+}
+
+const getLastMessagePreview = (employeeId) => {
+  const lastTime = getLastMessageTime(employeeId)
+  if (!lastTime) return ''
+  
+  const lastMessage = store.messages.find(msg => 
+    (msg.senderId === employeeId && msg.receiverId === currentUserId.value) ||
+    (msg.senderId === currentUserId.value && msg.receiverId === employeeId)
+  )
+  
+  if (!lastMessage) return ''
+  
+  const content = lastMessage.content
+  return content.length > 30 ? content.substring(0, 30) + '...' : content
+}
+
+// UI helpers
+const getInitials = (name) => {
+  if (!name) return '?'
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+}
+
+const formatLastMessageTime = (employeeId) => {
+  const lastTime = getLastMessageTime(employeeId)
+  if (!lastTime) return ''
+  
+  const now = new Date()
+  const diffMs = now - lastTime
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
+  
+  if (diffMins < 1) return 'Ahora'
+  if (diffMins < 60) return `${diffMins}m`
+  if (diffHours < 24) return `${diffHours}h`
+  if (diffDays < 7) return `${diffDays}d`
+  
+  return lastTime.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+}
+
+const formatTime = (timestamp) => {
+  return new Date(timestamp).toLocaleTimeString('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const formatReadTime = (readAt) => {
+  if (!readAt) return ''
+  return new Date(readAt).toLocaleTimeString('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+// CORREGIDO: Marcar mensajes visibles como leídos - MÁS AGRESIVO
+const markVisibleMessagesAsRead = async () => {
+  // Condiciones menos estrictas para asegurar que se marque como leído
+  if (!isChatVisible.value || document.visibilityState !== 'visible') {
+    console.log('🚫 No marcar como leído: chat no visible')
+    return
+  }
+  
+  // IMPORTANTE: Solo marcar mensajes del PARTNER como leídos
+  const visibleUnreadIds = getVisibleUnreadMessageIds()
+  
+  if (visibleUnreadIds.length > 0 && chatPartnerId.value) {
+    console.log(`✅ Marcando ${visibleUnreadIds.length} mensajes DEL PARTNER como LEÍDOS`)
+    
+    try {
+      // Esto notificará al partner que hemos leído sus mensajes
+      await store.markMessagesAsRead(chatPartnerId.value, visibleUnreadIds)
+      
+      // CORREGIDO: Actualizar estado local inmediatamente para mejor UX
+      visibleUnreadIds.forEach(messageId => {
+        const message = store.messages.find(msg => msg.id === messageId)
+        if (message && !message.read) {
+          message.read = true
+          message.readAt = new Date()
+          console.log(`✅ Mensaje ${messageId} marcado como LEÍDO localmente`)
+        }
+      })
+      
+    } catch (error) {
+      console.error('Error marcando mensajes del partner como leídos:', error)
+    }
+  }
+}
+
+// Marcar todos los mensajes como leídos (solo del partner)
+const markAllAsRead = async () => {
+  if (!chatPartnerId.value) return
+  
+  // SOLO mensajes del partner que no he leído
+  const allUnreadIds = store.getUnreadMessagesFromUser(chatPartnerId.value).map(msg => msg.id)
+  if (allUnreadIds.length > 0) {
+    markingAsRead.value = true
+    console.log(`📖 Marcando TODOS los mensajes DEL PARTNER (${allUnreadIds.length}) como LEÍDOS`)
+    
+    try {
+      await store.markMessagesAsRead(chatPartnerId.value, allUnreadIds)
+    } catch (error) {
+      console.error('Error marcando todos los mensajes del partner como leídos:', error)
+    } finally {
+      markingAsRead.value = false
+    }
+  }
+}
+
+// Trackear interacción del usuario
+const trackUserInteraction = () => {
+  userInteractedWithChat.value = true
+  lastInteractionTime.value = Date.now()
+  
+  // Resetear el timer de interacción
+  clearTimeout(interactionTimer)
+  interactionTimer = setTimeout(() => {
+    userInteractedWithChat.value = false
+    console.log('⏰ Interacción del usuario expirada')
+  }, 30000)
+}
+
+// CORREGIDO: Función para manejar cuando el partner deja de ver el chat
+const handlePartnerStoppedViewing = () => {
+  if (isPartnerViewingChat.value) {
+    console.log(`👋 Partner ${chatPartnerId.value} dejó de ver el chat`)
+    isPartnerViewingChat.value = false
+    store.setChatViewingStatus(chatPartnerId.value, false)
+    
+    // CORREGIDO: Cuando el partner deja de ver, marcar los mensajes visibles como LEÍDOS
+    setTimeout(() => {
+      markVisibleMessagesAsRead()
+    }, 1000)
+  }
+}
+
+const onMessagesScroll = () => {
+  if (messagesContainer.value) {
+    const container = messagesContainer.value
+    const scrollPosition = container.scrollTop + container.clientHeight
+    const scrollThreshold = container.scrollHeight - 50
+    
+    isAtBottom.value = scrollPosition >= scrollThreshold
+    
+    // Trackear scroll como interacción
+    trackUserInteraction()
+    
+    // CORREGIDO: Marcar mensajes visibles inmediatamente al hacer scroll
+    if (isChatVisible.value && document.visibilityState === 'visible') {
+      clearTimeout(scrollDebounceTimer)
+      scrollDebounceTimer = setTimeout(() => {
+        markVisibleMessagesAsRead()
+      }, 800) // Delay más corto
+    }
+  }
+}
+
+const scrollToBottomAndMarkRead = () => {
+  scrollToBottom()
+  trackUserInteraction()
+  setTimeout(() => {
+    markVisibleMessagesAsRead()
+  }, 500) // Delay más corto
+}
+
+const scrollToBottom = () => {
+  if (!autoScrollEnabled.value) return
+  
+  nextTick(() => {
+    if (messagesContainer.value) {
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+      isAtBottom.value = true
+    }
+  })
+}
+
+// CORREGIDO: Observador de visibilidad del chat - MÁS PERMISIVO
+const setupVisibilityObserver = () => {
+  if (!chatArea.value) return
+  
+  visibilityObserver.value = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const wasVisible = isChatVisible.value
+      isChatVisible.value = entry.isIntersecting
+      
+      console.log(`📱 Chat ${entry.isIntersecting ? 'visible' : 'oculto'} - Viendo chat: ${isUserViewingThisChat.value}`)
+      
+      clearTimeout(visibilityDebounceTimer)
+      visibilityDebounceTimer = setTimeout(() => {
+        if (entry.isIntersecting && chatPartnerId.value && document.visibilityState === 'visible') {
+          // Notificar que está viendo el chat
+          store.setChatViewingStatus(chatPartnerId.value, true)
+          isPartnerViewingChat.value = true
+          
+          // CORREGIDO: Marcar mensajes como leídos más rápido
+          clearTimeout(markReadDebounceTimer)
+          markReadDebounceTimer = setTimeout(() => {
+            markVisibleMessagesAsRead()
+          }, 1500) // Delay más corto
+          
+          // Configurar timeout para cuando deje de ver
+          clearTimeout(partnerViewingTimeout)
+          partnerViewingTimeout = setTimeout(() => {
+            handlePartnerStoppedViewing()
+          }, 3000) // 3 segundos de inactividad
+          
+        } else if (chatPartnerId.value && wasVisible && !entry.isIntersecting) {
+          // Notificar que dejó de ver el chat
+          console.log(`🚫 Usuario dejó de ver el chat con ${chatPartnerId.value}`)
+          handlePartnerStoppedViewing()
+        }
+      }, 300)
+    })
+  }, {
+    threshold: 0.5 // Menos estricto para mejor detección
+  })
+  
+  visibilityObserver.value.observe(chatArea.value)
+}
+
+// Listener para cambios de visibilidad de la página
+const setupPageVisibilityListener = () => {
+  const handleVisibilityChange = () => {
+    console.log(`📄 Visibilidad de página: ${document.visibilityState}`)
+    
+    if (document.visibilityState === 'hidden') {
+      userInteractedWithChat.value = false
+      if (chatPartnerId.value) {
+        handlePartnerStoppedViewing()
+      }
+    } else if (document.visibilityState === 'visible' && isChatVisible.value && chatPartnerId.value) {
+      // CORREGIDO: Al volver a la página, notificar que está viendo
+      store.setChatViewingStatus(chatPartnerId.value, true)
+      isPartnerViewingChat.value = true
+      
+      // Marcar mensajes como leídos después de un delay
+      setTimeout(() => {
+        markVisibleMessagesAsRead()
+      }, 2000)
+    }
+    
+    clearTimeout(visibilityDebounceTimer)
+    visibilityDebounceTimer = setTimeout(() => {
+      if (document.visibilityState === 'hidden' && chatPartnerId.value) {
+        console.log(`🚫 Página oculta - dejando de ver chat con ${chatPartnerId.value}`)
+        handlePartnerStoppedViewing()
+      }
+    }, 300)
+  }
+  
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  
+  // Trackear clicks y teclas en el chat
+  const trackInteraction = () => {
+    if (isChatVisible.value && document.visibilityState === 'visible') {
+      trackUserInteraction()
+      
+      if (chatPartnerId.value) {
+        store.setChatViewingStatus(chatPartnerId.value, true)
+        isPartnerViewingChat.value = true
+        
+        // Reiniciar el timeout de "dejar de ver"
+        clearTimeout(partnerViewingTimeout)
+        partnerViewingTimeout = setTimeout(() => {
+          handlePartnerStoppedViewing()
+        }, 3000)
+        
+        // CORREGIDO: Marcar mensajes como leídos inmediatamente al interactuar
+        setTimeout(() => {
+          markVisibleMessagesAsRead()
+        }, 1000)
+      }
+    }
+  }
+  
+  document.addEventListener('click', trackInteraction)
+  document.addEventListener('keydown', trackInteraction)
+  
+  return () => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    document.removeEventListener('click', trackInteraction)
+    document.removeEventListener('keydown', trackInteraction)
+  }
+}
+
+// Handler para mensajes entrantes
+const handleIncomingMessage = (message) => {
+  console.log('📨 Mensaje entrante en chat:', message)
+  
+  const isRelevantForCurrentUser = 
+    message.receiverId === currentUserId.value || 
+    message.senderId === currentUserId.value
+  
+  if (!isRelevantForCurrentUser) return
+  
+  console.log('💡 Mensaje recibido, se marcará como leído cuando sea visible')
+  
+  if (isAtBottom.value) {
+    setTimeout(() => {
+      scrollToBottom()
+    }, 100)
+  }
+}
+
+// CORREGIDO: Listener para cuando el partner marca mensajes como leídos
+const setupMessagesReadListener = () => {
+  if (store.socket) {
+    store.socket.on('messagesRead', (data) => {
+      console.log('📖 Mensajes marcados como leídos por el partner:', data)
+      
+      if (data.readerId === chatPartnerId.value) {
+        let markedCount = 0
+        store.messages.forEach(msg => {
+          if (Array.isArray(data.messageIds) && data.messageIds.includes(msg.id)) {
+            if (!msg.read) {
+              msg.read = true
+              msg.readAt = new Date()
+              markedCount++
+              console.log(`✅ Mensaje ${msg.id} marcado como LEÍDO por el partner`)
+            }
+          }
+        })
+        console.log(`✅ Total de mensajes marcados como leídos: ${markedCount}`)
+      }
+    })
+  }
+}
+
+const setupMessageListener = () => {
+  if (store.socket) {
+    store.socket.off('newMessage', handleIncomingMessage)
+    store.socket.on('newMessage', handleIncomingMessage)
+  }
+}
+
+const setupStatusListeners = () => {
+  if (store.socket) {
+    store.socket.on('userStatusUpdate', (data) => {
+      console.log('🔄 Actualización de estado:', data)
+    })
+  }
+}
+
+// Setup de listeners de estado del partner
+const setupViewingStatusListeners = () => {
+  if (store.socket) {
+    store.socket.on('chatViewingStatus', (data) => {
+      console.log('👀 Estado de visualización recibido:', data)
+      
+      if (data.userId === chatPartnerId.value) {
+        isPartnerViewingChat.value = data.isViewing
+        console.log(`🔄 Partner ${data.userId} ${data.isViewing ? 'está viendo' : 'dejó de ver'} el chat`)
+        
+        if (!data.isViewing) {
+          clearTimeout(partnerViewingTimeout)
+          // CORREGIDO: Cuando el partner deja de ver, marcar mensajes como leídos
+          setTimeout(() => {
+            markVisibleMessagesAsRead()
+          }, 1000)
+        }
+      }
+      
+      store.updateChatViewingStatus(data)
+    })
+  }
+}
+
+// Data loading
+const loadEmployees = async () => {
+  try {
+    employees.value = await api.get('/users')
+    const employeeWithUnread = employees.value.find(emp => hasUnreadMessages(emp.id))
+    selectedEmployee.value = employeeWithUnread || employees.value[0]
+    
+    if (selectedEmployee.value) {
+      await loadMessages()
+    }
+  } catch (error) {
+    console.error('Error cargando empleados:', error)
+  }
+}
+
+const loadMessages = async () => {
+  try {
+    const messages = await api.get(`/messages/${currentUserId.value}`)
+    store.setMessages(messages)
+    
+    setTimeout(() => {
+      scrollToBottom()
+    }, 100)
+    
+  } catch (error) {
+    console.error('Error cargando mensajes:', error)
+  }
+}
+
+// Al seleccionar empleado
+const selectEmployee = async (employee) => {
+  if (selectedEmployee.value) {
+    store.setChatViewingStatus(selectedEmployee.value.id, false)
+  }
+  
+  isPartnerViewingChat.value = false
+  userInteractedWithChat.value = false
+  clearTimeout(partnerViewingTimeout)
+  
+  selectedEmployee.value = employee
+  autoScrollEnabled.value = true
+  setupMessageListener()
+  
+  await loadMessages()
+}
+
+const sendMessage = async () => {
+  if (!newMessage.value.trim()) return
+  
+  if (!store.isSocketConnected) {
+    alert('Espera a que se establezca la conexión...')
+    return
+  }
+
+  if (!chatPartnerId.value) {
+    alert('Selecciona un empleado para chatear')
+    return
+  }
+
+  sendingMessage.value = true
+  autoScrollEnabled.value = true
+  
+  trackUserInteraction()
+  
+  try {
+    const messageData = {
+      content: newMessage.value.trim(),
+      senderId: currentUserId.value,
+      receiverId: chatPartnerId.value
+    }
+    
+    await api.post('/messages', messageData)
+    newMessage.value = ''
+    scrollToBottom()
+    
+  } catch (error) {
+    console.error('Error enviando mensaje:', error)
+    alert('Error enviando mensaje: ' + error.message)
+  } finally {
+    sendingMessage.value = false
+  }
+}
+
+// Lifecycle
+onMounted(async () => {
+  let removeVisibilityListener = () => {}
+  
+  setupMessageListener()
+  setupStatusListeners()
+  setupViewingStatusListeners()
+  setupMessagesReadListener()
+  removeVisibilityListener = setupPageVisibilityListener()
+  
+  const waitForConnection = () => {
+    return new Promise((resolve) => {
+      if (store.isSocketConnected) {
+        resolve()
+      } else {
+        const interval = setInterval(() => {
+          if (store.isSocketConnected) {
+            clearInterval(interval)
+            resolve()
+          }
+        }, 100)
+      }
+    })
+  }
+  
+  await waitForConnection()
+  
+  nextTick(() => {
+    setupVisibilityObserver()
+  })
+  
+  if (props.isAdmin) {
+    await loadEmployees()
+  } else {
+    await loadMessages()
+  }
+  
+  onUnmounted(() => {
+    removeVisibilityListener()
+  })
+})
+
+onUnmounted(() => {
+  if (store.socket) {
+    store.socket.off('newMessage', handleIncomingMessage)
+    store.socket.off('chatViewingStatus')
+    store.socket.off('messagesRead')
+  }
+  
+  if (visibilityObserver.value) {
+    visibilityObserver.value.disconnect()
+  }
+  
+  if (chatPartnerId.value) {
+    store.setChatViewingStatus(chatPartnerId.value, false)
+  }
+  
+  clearTimeout(scrollDebounceTimer)
+  clearTimeout(visibilityDebounceTimer)
+  clearTimeout(markReadDebounceTimer)
+  clearTimeout(interactionTimer)
+  clearTimeout(partnerViewingTimeout)
+})
+
+// Watchers
+watch(filteredMessages, () => {
+  if (autoScrollEnabled.value) {
+    scrollToBottom()
+  }
+  
+  if (isAtBottom.value && isChatVisible.value && document.visibilityState === 'visible') {
+    clearTimeout(markReadDebounceTimer)
+    markReadDebounceTimer = setTimeout(() => {
+      markVisibleMessagesAsRead()
+    }, 1000)
+  }
+})
+
+watch(isUserViewingThisChat, (isViewing) => {
+  if (chatPartnerId.value) {
+    console.log(`🔄 Usuario ${isViewing ? 'viendo' : 'dejó de ver'} chat con ${chatPartnerId.value}`)
+    
+    if (isViewing) {
+      store.setChatViewingStatus(chatPartnerId.value, true)
+      clearTimeout(markReadDebounceTimer)
+      markReadDebounceTimer = setTimeout(() => {
+        markVisibleMessagesAsRead()
+      }, 1500)
+    } else {
+      store.setChatViewingStatus(chatPartnerId.value, false)
+    }
+  }
+})
+
+watch(() => store.isSocketConnected, (connected) => {
+  if (connected) {
+    setupMessageListener()
+    setupStatusListeners()
+    setupViewingStatusListeners()
+    setupMessagesReadListener()
+  }
+})
+
+watch(selectedEmployee, (newEmployee, oldEmployee) => {
+  autoScrollEnabled.value = true
+  setupMessageListener()
+})
+
+watch(() => store.getUnreadCountFromUser(chatPartnerId.value), (newCount) => {
+  if (newCount > 0 && isAtBottom.value && isChatVisible.value && document.visibilityState === 'visible') {
+    clearTimeout(markReadDebounceTimer)
+    markReadDebounceTimer = setTimeout(() => {
+      markVisibleMessagesAsRead()
+    }, 1000)
+  }
+})
+</script>
+
+
+<style scoped>
+.chat-wrapper {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Employee List Styles */
+.employee-list-container {
+  flex: 1;
+  min-height: 300px;
+  max-height: 400px;
+}
+
+.employee-list-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.employee-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fafafa;
+}
+
+.employee-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.employee-list-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  transition: all 0.3s ease;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+}
+
+.employee-list-item:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.employee-list-item.selected-employee {
+  background-color: rgba(25, 118, 210, 0.08);
+  border-left: 4px solid #1976d2;
+}
+
+.employee-list-item.has-unread {
+  border-left: 4px solid #ff4444;
+}
+
+.employee-avatar-container {
+  position: relative;
+  margin-right: 12px;
+}
+
+.employee-name {
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.employee-status {
+  font-size: 0.875rem;
+  opacity: 0.8;
+}
+
+.employee-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin-left: auto;
+  padding-left: 12px;
+}
+
+.unread-badge {
+  flex-shrink: 0;
+}
+
+.last-message-time {
+  font-size: 0.75rem;
+  color: #666;
+  white-space: nowrap;
+}
+
+/* Chat Area Styles */
+.chat-area {
+  height: 500px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+  flex-shrink: 0;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+  min-height: 64px;
+  flex-shrink: 0;
+}
+
+.chat-partner-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.partner-avatar-container {
+  position: relative;
+}
+
+.partner-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.partner-name {
+  font-weight: 500;
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.partner-status {
+  font-size: 0.875rem;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viewing-text {
+  color: green;
+  font-weight: 500;
+}
+
+.online-text {
+  color: #666;
+}
+
+.viewing-indicator-header {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: white;
+  border-radius: 50%;
+  padding: 2px;
+}
+
+.mark-read-btn {
+  flex-shrink: 0;
+}
+
+/* Messages Styles */
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  background: #fafafa;
+  position: relative;
+  min-height: 200px;
+}
+
+.empty-chat {
+  text-align: center;
+  padding: 48px 16px;
+  color: #666;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.empty-title {
+  margin-top: 12px;
+  font-weight: 500;
+}
+
+.empty-subtitle {
+  font-size: 0.875rem;
+  margin-top: 4px;
+}
+
+.message {
+  margin-bottom: 16px;
+  max-width: 85%;
+}
+
+.message.sent {
+  margin-left: auto;
+  text-align: right;
+}
+
+.message.received {
+  margin-right: auto;
+}
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: 18px;
+  display: inline-block;
+  max-width: 100%;
+  word-wrap: break-word;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.message.sent .message-bubble {
+  background-color: #1976d2;
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.message.received .message-bubble {
+  background-color: #ffffff;
+  color: #333;
+  border: 1px solid #e0e0e0;
+  border-bottom-left-radius: 4px;
+}
+
+.message-content {
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 4px;
+  opacity: 0.8;
+}
+
+.message-time {
+  font-size: 0.75rem;
+}
+
+.message.sent .message-time {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.message.received .message-time {
+  color: #666;
+}
+
+.message-status {
+  display: flex;
+  align-items: center;
+}
+
+/* Estados de mensajes */
+.viewing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: green;
+  margin-top: 2px;
+  text-align: right;
+}
+
+.sent-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: grey;
+  margin-top: 2px;
+  text-align: right;
+}
+
+.read-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: #1976d2;
+  margin-top: 2px;
+  text-align: right;
+}
+
+.new-messages-indicator {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: pointer;
+  z-index: 10;
+}
+
+.new-messages-indicator:hover {
+  opacity: 0.9;
+}
+
+/* Input Area Styles */
+.message-input-area {
+  padding: 12px 16px;
+  background: white;
+  border-top: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.message-input {
+  font-size: 0.9rem;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  font-size: 0.75rem;
+  color: #666;
+  margin-top: 4px;
+  padding: 0 8px;
+}
+
+.status-icon {
+  margin-right: 4px;
+}
+
+/* No Selection State */
+.no-selection-state {
+  text-align: center;
+  padding: 48px 16px;
+  color: #666;
+  height: 400px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.no-selection-text {
+  margin-top: 12px;
+  font-weight: 500;
+}
+
+/* Status Badge */
+.status-badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  transform: scale(0.9);
+}
+
+.status-badge :deep(.v-badge__badge) {
+  border: 2px solid white;
+  min-width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.avatar-text {
+  font-weight: 600;
+  font-size: 0.9rem;
+  letter-spacing: 0.5px;
+}
+
+/* Scrollbar */
+.messages-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.messages-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.messages-container::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.messages-container::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.employee-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.employee-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.employee-list::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 2px;
+}
+</style> 
+================================= 
+src\components\EmployeeDashboard.vue 
+================================= 
+ 
+<template>
+  <div v-if="store.user">
+    <!-- Dashboard del empleado cuando hay usuario -->
+    <v-container fluid>
+      <v-row>
+        <v-col cols="12" md="8">
+          <v-card>
+            <v-card-title class="d-flex align-center">
+              <v-avatar color="primary" size="40" class="mr-3">
+                <span class="text-white">{{ getInitials(store.user.name) }}</span>
+              </v-avatar>
+              Mis Tareas - {{ store.user.name }}
+              <v-spacer></v-spacer>
+              <v-btn 
+                icon 
+                @click="logout"
+                title="Cambiar usuario"
+              >
+                <v-icon>mdi-account-switch</v-icon>
+              </v-btn>
+            </v-card-title>
+            <v-card-text>
+              <TaskList :is-admin="false" />
+            </v-card-text>
+          </v-card>
+        </v-col>
+        
+        <v-col cols="12" md="4">
+          <v-card>
+            <v-card-title>Chat con Supervisor</v-card-title>
+            <v-card-text>
+              <Chat :is-admin="false" />
+            </v-card-text>
+          </v-card>
+          
+          <v-card class="mt-4">
+            <v-card-title>Mi Ubicación</v-card-title>
+            <v-card-text>
+              <UserLocation :is-admin="false" />
+            </v-card-text>
+          </v-card>
+        </v-col>
+      </v-row>
+    </v-container>
+  </div>
+  
+  <!-- Selector de usuarios cuando NO hay usuario -->
+  <UserSelector v-else />
+</template>
+
+<script setup>
+import { useAppStore } from '../stores/app.js'
+import TaskList from './TaskList.vue'
+import Chat from './Chat.vue'
+import UserLocation from './UserLocation.vue'
+import UserSelector from './UserSelector.vue'
+
+const store = useAppStore()
+
+const getInitials = (name) => {
+  if (!name) return '?'
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+}
+
+const logout = () => {
+  store.setUser(null)
+}
+</script> 
+================================= 
+src\components\TaskList.vue 
+================================= 
+ 
+<template>
+  <div>
+    <v-btn v-if="isAdmin" color="primary" @click="showDialog = true" class="mb-4">
+      Nueva Tarea
+    </v-btn>
+
+    <v-list lines="two">
+      <v-list-subheader v-if="isAdmin">
+        {{ filteredTasks.length }} tareas en total
+      </v-list-subheader>
+      <v-list-subheader v-else>
+        {{ filteredTasks.length }} tareas asignadas
+      </v-list-subheader>
+      
+      <v-list-item v-for="task in filteredTasks" :key="task.id" class="mb-2">
+        <template v-slot:prepend>
+          <v-progress-circular
+            :model-value="task.progress"
+            :color="getProgressColor(task.progress)"
+            size="40"
+          >
+            {{ task.progress }}%
+          </v-progress-circular>
+        </template>
+
+        <v-list-item-title>{{ task.title }}</v-list-item-title>
+        <v-list-item-subtitle>{{ task.description }}</v-list-item-subtitle>
+        
+        <!-- MOSTRAR ASIGNADO A (solo en admin) -->
+        <v-list-item-subtitle v-if="isAdmin" class="mt-1">
+          <v-icon small>mdi-account</v-icon>
+          Asignado a: {{ getEmployeeName(task.assignedTo) }}
+        </v-list-item-subtitle>
+        
+        <template v-slot:append>
+          <div class="text-right">
+            <v-chip :color="getStatusColor(task.status)" class="mr-2">
+              {{ getStatusText(task.status) }}
+            </v-chip>
+            <v-menu v-if="!isAdmin">
+              <template v-slot:activator="{ props }">
+                <v-btn icon v-bind="props" size="small">
+                  <v-icon>mdi-dots-vertical</v-icon>
+                </v-btn>
+              </template>
+              <v-list density="compact">
+                <v-list-item @click="updateProgress(task, 25)">
+                  <v-list-item-title>25% Completado</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="updateProgress(task, 50)">
+                  <v-list-item-title>50% Completado</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="updateProgress(task, 75)">
+                  <v-list-item-title>75% Completado</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="updateProgress(task, 100)">
+                  <v-list-item-title>Completado</v-list-item-title>
+                </v-list-item>
+              </v-list>
+            </v-menu>
+          </div>
+        </template>
+      </v-list-item>
+    </v-list>
+
+    <!-- Dialog para crear tarea -->
+    <v-dialog v-model="showDialog" max-width="500" v-if="isAdmin">
+      <v-card>
+        <v-card-title>Nueva Tarea</v-card-title>
+        <v-card-text>
+          <v-form @submit.prevent="createTask">
+            <v-text-field v-model="newTask.title" label="Título" required></v-text-field>
+            <v-textarea v-model="newTask.description" label="Descripción"></v-textarea>
+            <v-select
+              v-model="newTask.assignedTo"
+              :items="employees"
+              item-title="name"
+              item-value="id"
+              label="Asignar a"
+            ></v-select>
+            <v-text-field
+              v-model="newTask.dueDate"
+              type="date"
+              label="Fecha límite"
+            ></v-text-field>
+          </v-form>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn @click="showDialog = false">Cancelar</v-btn>
+          <v-btn color="primary" @click="createTask">Crear</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useAppStore } from '../stores/app.js'
+import { api } from '../services/api.js'
+import socketService from '../services/socket.js'
+
+const props = defineProps(['isAdmin'])
+const store = useAppStore()
+const showDialog = ref(false)
+const employees = ref([])
+const newTask = ref({
+  title: '',
+  description: '',
+  assignedTo: null,
+  dueDate: ''
+})
+
+const filteredTasks = computed(() => {
+  if (props.isAdmin) {
+    return store.tasks
+  } else {
+    return store.tasks.filter(task => task.assignedTo === store.user?.id)
+  }
+})
+
+onMounted(async () => {
+  await loadTasks()
+  if (props.isAdmin) {
+    await loadEmployees()
+  }
+  
+  // Escuchar actualizaciones en tiempo real
+  if (store.socket) {
+    store.socket.on('taskCreated', (task) => {
+      store.tasks.push(task)
+    })
+    
+    store.socket.on('taskUpdated', (task) => {
+      const index = store.tasks.findIndex(t => t.id === task.id)
+      if (index !== -1) {
+        store.tasks[index] = task
+      }
+    })
+  }
+})
+
+const loadTasks = async () => {
+  const url = props.isAdmin ? '/tasks' : `/tasks?userId=${store.user.id}`
+  const tasks = await api.get(url)
+  store.setTasks(tasks)
+}
+
+const loadEmployees = async () => {
+  employees.value = await api.get('/users')
+}
+
+const createTask = async () => {
+  const task = await api.post('/tasks', {
+    ...newTask.value,
+    assignedBy: store.user.id
+  })
+  showDialog.value = false
+  newTask.value = { title: '', description: '', assignedTo: null, dueDate: '' }
+}
+
+const updateProgress = async (task, progress) => {
+  const updatedTask = await api.put(`/tasks/${task.id}`, {
+    progress,
+    status: progress === 100 ? 'completed' : 'in-progress'
+  })
+  
+  if (store.socket) {
+    store.socket.emit('taskProgress', {
+      taskId: task.id,
+      progress
+    })
+  }
+}
+
+const getProgressColor = (progress) => {
+  if (progress < 25) return 'error'
+  if (progress < 75) return 'warning'
+  return 'success'
+}
+
+const getStatusColor = (status) => {
+  const colors = {
+    'pending': 'grey',
+    'in-progress': 'blue',
+    'completed': 'green'
+  }
+  return colors[status] || 'grey'
+}
+
+const getStatusText = (status) => {
+  const texts = {
+    'pending': 'Pendiente',
+    'in-progress': 'En Progreso',
+    'completed': 'Completado'
+  }
+  return texts[status] || status
+}
+const getEmployeeName = (employeeId) => {
+  const employee = employees.value.find(emp => emp.id === employeeId)
+  return employee ? employee.name : `Empleado ${employeeId}`
+}
+</script> 
+================================= 
+src\components\UserLocation.vue 
+================================= 
+ 
+<template>
+  <div>
+    <div v-if="!isAdmin" class="text-center">
+      <v-btn 
+        color="primary" 
+        @click="getLocation" 
+        :loading="loading"
+        class="mb-4"
+      >
+        Actualizar Mi Ubicación
+      </v-btn>
+      
+      <div v-if="currentLocation">
+        <v-chip color="green" class="mb-2">
+          <v-icon start>mdi-map-marker</v-icon>
+          Ubicación Actualizada
+        </v-chip>
+        <div>Lat: {{ currentLocation.latitude.toFixed(4) }}</div>
+        <div>Lng: {{ currentLocation.longitude.toFixed(4) }}</div>
+        <div>Actualizado: {{ formatTime(currentLocation.lastUpdate) }}</div>
+      </div>
+    </div>
+
+    <div v-else>
+      <v-list>
+        <v-list-item
+          v-for="(location, userId) in store.userLocations"
+          :key="userId"
+        >
+          <template v-slot:prepend>
+            <v-icon color="green">mdi-map-marker</v-icon>
+          </template>
+          
+          <v-list-item-title>
+            {{ getUserName(userId) }}
+          </v-list-item-title>
+          <v-list-item-subtitle>
+            Lat: {{ location.latitude.toFixed(4) }}, Lng: {{ location.longitude.toFixed(4) }}
+          </v-list-item-subtitle>
+          <v-list-item-subtitle>
+            Última actualización: {{ formatTime(location.lastUpdate) }}
+          </v-list-item-subtitle>
+        </v-list-item>
+      </v-list>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, computed } from 'vue'
+import { useAppStore } from '../stores/app.js'
+
+const props = defineProps(['isAdmin'])
+const store = useAppStore()
+const loading = ref(false)
+const currentLocation = ref(null)
+
+const employees = ref([])
+
+onMounted(async () => {
+  if (props.isAdmin) {
+    await loadEmployees()
+  }
+  
+  if (store.socket) {
+    store.socket.on('locationUpdate', (data) => {
+      store.updateUserLocation(data)
+    })
+  }
+})
+
+const loadEmployees = async () => {
+  // En una implementación real, cargaríamos los empleados desde la API
+  employees.value = [
+    { id: 2, name: 'Juan Pérez' },
+    { id: 3, name: 'María García' }
+  ]
+}
+
+const getLocation = () => {
+  loading.value = true
+  
+  if (!navigator.geolocation) {
+    alert('La geolocalización no es soportada por este navegador')
+    loading.value = false
+    return
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const location = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        lastUpdate: new Date()
+      }
+      
+      currentLocation.value = location
+      
+      if (store.socket) {
+        store.socket.emit('userLocation', {
+          userId: store.user.id,
+          location
+        })
+      }
+      
+      loading.value = false
+    },
+    (error) => {
+      alert('Error obteniendo la ubicación: ' + error.message)
+      loading.value = false
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    }
+  )
+}
+
+const getUserName = (userId) => {
+  const employee = employees.value.find(emp => emp.id == userId)
+  return employee ? employee.name : `Usuario ${userId}`
+}
+
+const formatTime = (timestamp) => {
+  return new Date(timestamp).toLocaleTimeString('es-ES')
+}
+</script> 
+================================= 
+src\components\UserSelector.vue 
+================================= 
+ 
+<template>
+  <v-container class="fill-height d-flex align-center justify-center">
+    <v-card width="400" class="pa-6">
+      <v-card-title class="text-center">
+        <v-icon size="48" color="primary" class="mb-4">mdi-account-multiple</v-icon>
+        <div>Selecciona tu usuario</div>
+      </v-card-title>
+      
+      <v-card-text>
+        <v-list>
+          <v-list-item
+            v-for="user in availableUsers"
+            :key="user.id"
+            @click="selectUser(user)"
+            class="mb-3 user-item"
+            variant="outlined"
+          >
+            <template v-slot:prepend>
+              <v-avatar color="primary" size="48">
+                <span class="text-white">{{ getInitials(user.name) }}</span>
+              </v-avatar>
+            </template>
+            
+            <v-list-item-title class="font-weight-medium">
+              {{ user.name }}
+            </v-list-item-title>
+            
+            <v-list-item-subtitle>
+              {{ user.email }}
+            </v-list-item-subtitle>
+            
+            <template v-slot:append>
+              <v-icon color="primary">mdi-chevron-right</v-icon>
+            </template>
+          </v-list-item>
+        </v-list>
+        
+        <v-alert type="info" variant="tonal" class="mt-4">
+          <div class="text-caption">
+            Selecciona tu usuario para acceder al sistema de tareas y chat.
+          </div>
+        </v-alert>
+      </v-card-text>
+    </v-card>
+  </v-container>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import { useAppStore } from '../stores/app.js'
+import { useRouter } from 'vue-router'
+
+const store = useAppStore()
+const router = useRouter()
+
+const availableUsers = ref([
+  {
+    id: 2,
+    name: 'Juan Pérez',
+    role: 'employee',
+    email: 'juan@empresa.com'
+  },
+  {
+    id: 3,
+    name: 'María García',
+    role: 'employee', 
+    email: 'maria@empresa.com'
+  },
+  {
+    id: 4,
+    name: 'Carlos López',
+    role: 'employee',
+    email: 'carlos@empresa.com'
+  }
+])
+
+const getInitials = (name) => {
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+}
+
+const selectUser = (user) => {
+  console.log('👤 Usuario seleccionado:', user)
+  store.setUser(user)
+  
+  // Ya estamos en /employee, no necesitamos navegar
+  // El componente EmployeeDashboard detectará el cambio
+}
+</script>
+
+<style scoped>
+.user-item {
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.user-item:hover {
+  background-color: rgba(25, 118, 210, 0.04);
+  border-color: #1976d2;
+}
+
+.fill-height {
+  min-height: 100vh;
+}
+</style> 
+================================= 
+src\services\api.js 
+================================= 
+ 
+const API_BASE = 'http://localhost:3000/api'
+
+export const api = {
+  async get(url) {
+    const response = await fetch(`${API_BASE}${url}`)
+    return response.json()
+  },
+  
+  async post(url, data) {
+    const response = await fetch(`${API_BASE}${url}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+    return response.json()
+  },
+  
+  async put(url, data) {
+    const response = await fetch(`${API_BASE}${url}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+    return response.json()
+  }
+} 
+================================= 
+src\services\socket.js 
+================================= 
+ 
+import { io } from 'socket.io-client'
+
+class SocketService {
+  constructor() {
+    this.socket = null
+  }
+
+  connect() {
+    this.socket = io('http://localhost:3000', {
+      transports: ['websocket', 'polling']
+    })
+    
+    this.socket.on('connect', () => {
+      console.log('✅ Conectado al servidor Socket.io')
+    })
+    
+    this.socket.on('disconnect', () => {
+      console.log('❌ Desconectado del servidor')
+    })
+    
+    this.socket.on('connect_error', (error) => {
+      console.log('❌ Error de conexión:', error)
+    })
+    
+    return this.socket
+  }
+
+  disconnect() {
+    if (this.socket) {
+      this.socket.disconnect()
+    }
+  }
+}
+
+export default new SocketService() 
+================================= 
+src\stores\app.js 
+================================= 
+ 
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import socketService from '../services/socket.js'
+
+export const useAppStore = defineStore('app', () => {
+  const user = ref(null)
+  const tasks = ref([])
+  const messages = ref([])
+  const userLocations = ref({})
+  const socket = ref(null)
+  const isSocketConnected = ref(false)
+  const initialized = ref(false)
+  const onlineUsers = ref({})
+  const chatViewingStatus = ref({}) // { [partnerId]: boolean }
+
+  const socketConnected = computed(() => isSocketConnected.value)
+
+  const setUser = (userData) => {
+    if (user.value && user.value.id === userData.id) {
+      console.log('⚠️ Usuario ya establecido, ignorando...')
+      return
+    }
+    
+    console.log('👤 SET USER llamado con:', userData)
+    user.value = userData
+    
+    if (!initialized.value) {
+      initializeSocket()
+      initialized.value = true
+    }
+  }
+
+  const initializeSocket = () => {
+    console.log('🔌 Inicializando socket para user:', user.value?.id)
+    socket.value = socketService.connect()
+    
+    socket.value.on('connect', () => {
+      console.log('✅ Socket CONECTADO - User ID:', user.value?.id)
+      isSocketConnected.value = true
+      
+      // Notificar que el usuario está en línea
+      if (user.value) {
+        socket.value.emit('userOnline', user.value.id)
+      }
+    })
+    
+    socket.value.on('disconnect', () => {
+      console.log('❌ Socket DESCONECTADO')
+      isSocketConnected.value = false
+    })
+    
+    socket.value.on('connect_error', (error) => {
+      console.log('❌ Error de conexión socket:', error)
+      isSocketConnected.value = false
+    })
+
+    // Configurar listeners de eventos
+    socket.value.on('newMessage', (message) => {
+      console.log('📨 Nuevo mensaje recibido en store')
+      console.log('   De:', message.senderId, 'Para:', message.receiverId)
+      console.log('   Contenido:', message.content)
+      
+      // Agregar el mensaje al store
+      messages.value.push(message)
+      
+      // NO marcar automáticamente como leído - la lógica de visibilidad se encargará
+      console.log('💡 Mensaje agregado, se marcará como leído cuando sea visible')
+    })
+    
+    // Actualizar estado de usuarios en línea
+    socket.value.on('userStatusUpdate', (data) => {
+      console.log('🔄 Actualizando estado de usuarios:', data)
+      console.log('   Usuario afectado:', data.userId, 'Estado:', data.status)
+      console.log('   Total de usuarios en línea:', Object.values(data.onlineUsers).filter(u => u.status === 'online').length)
+      
+      // Actualizar el estado completo de usuarios en línea
+      onlineUsers.value = data.onlineUsers
+      
+      // Log para debugging
+      const onlineCount = Object.values(onlineUsers.value).filter(u => u.status === 'online').length
+      console.log(`📊 Estado actual - Usuarios en línea: ${onlineCount}`)
+    })
+    
+    // Mensajes marcados como leídos
+    socket.value.on('messagesRead', (data) => {
+      console.log('📖 Mensajes marcados como leídos por:', data.readerId)
+      console.log('   Mensajes afectados:', data.messageIds)
+      
+      // Actualizar estado local de mensajes leídos
+      messages.value.forEach(msg => {
+        if (Array.isArray(data.messageIds) && data.messageIds.includes(msg.id)) {
+          msg.read = true
+          msg.readAt = new Date()
+          console.log(`✅ Mensaje ${msg.id} marcado como leído`)
+        }
+      })
+    })
+    
+    // Estado de visualización del chat
+    socket.value.on('chatViewingStatus', (data) => {
+      console.log(`👀 Estado de visualización: Usuario ${data.userId} ${data.isViewing ? 'viendo' : 'dejó de ver'} chat con ${data.partnerId}`)
+      chatViewingStatus.value[data.userId] = data.isViewing
+    })
+    
+    // Listeners existentes
+    socket.value.on('taskCreated', (task) => {
+      console.log('📝 Nueva tarea:', task.title)
+      tasks.value.push(task)
+    })
+    
+    socket.value.on('taskUpdated', (task) => {
+      console.log('🔄 Tarea actualizada:', task.title, task.progress + '%')
+      const index = tasks.value.findIndex(t => t.id === task.id)
+      if (index !== -1) {
+        tasks.value[index] = task
+      }
+    })
+    
+    socket.value.on('locationUpdate', (data) => {
+      console.log('📍 Ubicación actualizada - User:', data.userId)
+      userLocations.value[data.userId] = data.location
+    })
+  }
+
+  // En el store, modifica la función markMessagesAsRead:
+  const markMessagesAsRead = (senderId, specificMessageIds = null) => {
+    if (socket.value && user.value) {
+      console.log(`📤 Enviando markMessagesAsRead:`, {
+        userId: user.value.id,
+        senderId: senderId,
+        messageIds: specificMessageIds
+      })
+      
+      // IMPORTANTE: Solo marcar mensajes del OTRO usuario como leídos
+      // No marcar nuestros propios mensajes
+      socket.value.emit('markMessagesAsRead', {
+        userId: user.value.id,
+        senderId: senderId,
+        messageIds: specificMessageIds
+      })
+      
+      // CORREGIDO: Solo actualizar estado local para mensajes del OTRO usuario
+      if (specificMessageIds) {
+        messages.value.forEach(msg => {
+          // SOLO marcar como leído si el mensaje es del OTRO usuario (senderId)
+          // y yo soy el receptor (receiverId)
+          if (specificMessageIds.includes(msg.id) && 
+              msg.senderId === senderId && 
+              msg.receiverId === user.value.id &&
+              !msg.read) {
+            msg.read = true
+            msg.readAt = new Date()
+            console.log(`✅ Mensaje ${msg.id} marcado como leído localmente`)
+          }
+        })
+      }
+    }
+  }
+
+  // Función para notificar estado de visualización del chat
+  const setChatViewingStatus = (partnerId, isViewing) => {
+    if (socket.value && user.value) {
+      console.log(`📤 Notificando estado de visualización: ${user.value.id} -> ${partnerId} = ${isViewing}`)
+      socket.value.emit('userViewingChat', {
+        userId: user.value.id,
+        partnerId,
+        isViewing
+      })
+    }
+  }
+
+  // Función para actualizar estado de visualización recibido del servidor
+  const updateChatViewingStatus = (data) => {
+    chatViewingStatus.value[data.userId] = data.isViewing
+  }
+
+  // Función para verificar si el partner está viendo el chat
+  const isPartnerViewingChat = (partnerId) => {
+    return chatViewingStatus.value[partnerId] || false
+  }
+
+  // Función para marcar todos los mensajes de un sender como leídos
+  const markAllMessagesAsRead = (senderId) => {
+    const unreadMessages = messages.value.filter(msg => 
+      msg.senderId === senderId && 
+      msg.receiverId === user.value?.id &&
+      !msg.read
+    ).map(msg => msg.id)
+    
+    if (unreadMessages.length > 0) {
+      markMessagesAsRead(senderId, unreadMessages)
+    }
+  }
+
+  // Función para obtener estado de un usuario
+  const isUserOnline = (userId) => {
+    return onlineUsers.value[userId]?.status === 'online'
+  }
+
+  // Función para obtener el último tiempo de actividad de un usuario
+  const getUserLastSeen = (userId) => {
+    const userData = onlineUsers.value[userId]
+    return userData ? userData.lastSeen : null
+  }
+
+  // Función para contar mensajes no leídos de un usuario específico
+  const getUnreadCountFromUser = (senderId) => {
+    return messages.value.filter(msg => 
+      msg.senderId === senderId && 
+      msg.receiverId === user.value?.id &&
+      !msg.read
+    ).length
+  }
+
+  // Función para obtener todos los mensajes no leídos
+  const getAllUnreadMessages = () => {
+    return messages.value.filter(msg => 
+      msg.receiverId === user.value?.id &&
+      !msg.read
+    )
+  }
+
+  // Función para obtener mensajes no leídos de un usuario específico
+  const getUnreadMessagesFromUser = (senderId) => {
+    return messages.value.filter(msg => 
+      msg.senderId === senderId && 
+      msg.receiverId === user.value?.id &&
+      !msg.read
+    )
+  }
+
+  const setTasks = (tasksData) => {
+    console.log('📋 Estableciendo tareas:', tasksData.length)
+    tasks.value = tasksData
+  }
+
+  const setMessages = (messagesData) => {
+    console.log('💾 Guardando mensajes:', messagesData.length)
+    
+    // Preservar el estado de 'read' de los mensajes existentes
+    const existingMessagesMap = new Map()
+    messages.value.forEach(msg => {
+      if (msg.read) {
+        existingMessagesMap.set(msg.id, { read: true, readAt: msg.readAt })
+      }
+    })
+    
+    // Aplicar el estado de 'read' a los nuevos mensajes
+    messagesData.forEach(msg => {
+      const existingState = existingMessagesMap.get(msg.id)
+      if (existingState) {
+        msg.read = existingState.read
+        msg.readAt = existingState.readAt
+      }
+    })
+    
+    messages.value = messagesData
+  }
+
+  const updateUserLocation = (data) => {
+    userLocations.value[data.userId] = data.location
+  }
+
+  // Función para agregar un mensaje localmente (para testing)
+  const addLocalMessage = (message) => {
+    messages.value.push({
+      ...message,
+      id: Date.now(),
+      timestamp: new Date(),
+      read: false
+    })
+  }
+
+  // Función para limpiar todos los datos (para testing)
+  const clearData = () => {
+    user.value = null
+    tasks.value = []
+    messages.value = []
+    userLocations.value = {}
+    onlineUsers.value = {}
+    chatViewingStatus.value = {}
+    initialized.value = false
+    if (socket.value) {
+      socket.value.disconnect()
+      socket.value = null
+    }
+  }
+
+  return {
+    // Estados
+    user,
+    tasks,
+    messages,
+    userLocations,
+    socket,
+    onlineUsers,
+    chatViewingStatus,
+    isSocketConnected: socketConnected,
+    
+    // Setters
+    setUser,
+    setTasks,
+    setMessages,
+    updateUserLocation,
+    
+    // Funciones de mensajes
+    markMessagesAsRead,
+    markAllMessagesAsRead,
+    isUserOnline,
+    getUserLastSeen,
+    getUnreadCountFromUser,
+    getAllUnreadMessages,
+    getUnreadMessagesFromUser,
+    
+    // Funciones de visibilidad del chat
+    setChatViewingStatus,
+    updateChatViewingStatus,
+    isPartnerViewingChat,
+    
+    // Funciones de utilidad
+    addLocalMessage,
+    clearData,
+    
+    // Computed adicionales para conveniencia
+    currentUser: computed(() => user.value),
+    totalUnreadCount: computed(() => getAllUnreadMessages().length),
+    isAdmin: computed(() => user.value?.role === 'admin'),
+    isEmployee: computed(() => user.value?.role === 'employee')
+  }
+}) 
+Total archivos: 20 

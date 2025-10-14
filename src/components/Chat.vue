@@ -261,6 +261,8 @@ let visibilityDebounceTimer = null
 let markReadDebounceTimer = null
 let interactionTimer = null
 
+let removeVisibilityListener = () => {}
+
 // Computed properties
 const currentUserId = computed(() => store.user?.id)
 const chatPartnerId = computed(() => props.isAdmin ? selectedEmployee.value?.id : 1)
@@ -349,14 +351,14 @@ const getVisibleUnreadMessageIds = () => {
     const rect = element.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
     
-    // Criterio estricto de visibilidad - mensaje debe estar completamente visible
-    const isFullyVisible = (
-      rect.top >= containerRect.top && 
-      rect.bottom <= containerRect.bottom &&
+    // Criterio más permisivo de visibilidad - mensaje parcialmente visible
+    const isVisible = (
+      rect.top <= containerRect.bottom && 
+      rect.bottom >= containerRect.top &&
       rect.height > 0
     )
     
-    if (isFullyVisible) {
+    if (isVisible) {
       const messageId = parseInt(element.dataset.messageId)
       const message = filteredMessages.value.find(msg => msg.id === messageId)
       
@@ -395,21 +397,6 @@ const getLastMessageTime = (employeeId) => {
   })
   
   return new Date(lastMessage.timestamp)
-}
-
-const getLastMessagePreview = (employeeId) => {
-  const lastTime = getLastMessageTime(employeeId)
-  if (!lastTime) return ''
-  
-  const lastMessage = store.messages.find(msg => 
-    (msg.senderId === employeeId && msg.receiverId === currentUserId.value) ||
-    (msg.senderId === currentUserId.value && msg.receiverId === employeeId)
-  )
-  
-  if (!lastMessage) return ''
-  
-  const content = lastMessage.content
-  return content.length > 30 ? content.substring(0, 30) + '...' : content
 }
 
 // UI helpers
@@ -451,11 +438,11 @@ const formatReadTime = (readAt) => {
   })
 }
 
-// CORREGIDO: Marcar mensajes visibles como leídos - MÁS AGRESIVO
+// ✅ CORREGIDO: Marcar mensajes visibles como leídos - MÁS EFECTIVO
 const markVisibleMessagesAsRead = async () => {
-  // Condiciones menos estrictas para asegurar que se marque como leído
-  if (!isChatVisible.value || document.visibilityState !== 'visible') {
-    console.log('🚫 No marcar como leído: chat no visible')
+  // Condiciones más permisivas
+  if (document.visibilityState !== 'visible') {
+    console.log('🚫 No marcar como leído: página no visible')
     return
   }
   
@@ -469,7 +456,7 @@ const markVisibleMessagesAsRead = async () => {
       // Esto notificará al partner que hemos leído sus mensajes
       await store.markMessagesAsRead(chatPartnerId.value, visibleUnreadIds)
       
-      // CORREGIDO: Actualizar estado local inmediatamente para mejor UX
+      // Actualizar estado local inmediatamente para mejor UX
       visibleUnreadIds.forEach(messageId => {
         const message = store.messages.find(msg => msg.id === messageId)
         if (message && !message.read) {
@@ -505,10 +492,16 @@ const markAllAsRead = async () => {
   }
 }
 
-// Trackear interacción del usuario
+// ✅ MEJORADO: Trackear interacción del usuario de forma más agresiva
 const trackUserInteraction = () => {
   userInteractedWithChat.value = true
   lastInteractionTime.value = Date.now()
+  
+  // Notificar inmediatamente que estamos viendo el chat
+  if (chatPartnerId.value && isChatVisible.value) {
+    store.setChatViewingStatus(chatPartnerId.value, true)
+    isPartnerViewingChat.value = true
+  }
   
   // Resetear el timer de interacción
   clearTimeout(interactionTimer)
@@ -518,17 +511,12 @@ const trackUserInteraction = () => {
   }, 30000)
 }
 
-// CORREGIDO: Función para manejar cuando el partner deja de ver el chat
+// ✅ MEJORADO: Función para manejar cuando el partner deja de ver el chat
 const handlePartnerStoppedViewing = () => {
   if (isPartnerViewingChat.value) {
     console.log(`👋 Partner ${chatPartnerId.value} dejó de ver el chat`)
     isPartnerViewingChat.value = false
     store.setChatViewingStatus(chatPartnerId.value, false)
-    
-    // CORREGIDO: Cuando el partner deja de ver, marcar los mensajes visibles como LEÍDOS
-    setTimeout(() => {
-      markVisibleMessagesAsRead()
-    }, 1000)
   }
 }
 
@@ -543,12 +531,12 @@ const onMessagesScroll = () => {
     // Trackear scroll como interacción
     trackUserInteraction()
     
-    // CORREGIDO: Marcar mensajes visibles inmediatamente al hacer scroll
-    if (isChatVisible.value && document.visibilityState === 'visible') {
+    // ✅ MEJORADO: Marcar mensajes visibles inmediatamente al hacer scroll
+    if (document.visibilityState === 'visible') {
       clearTimeout(scrollDebounceTimer)
       scrollDebounceTimer = setTimeout(() => {
         markVisibleMessagesAsRead()
-      }, 800) // Delay más corto
+      }, 500) // Delay más corto
     }
   }
 }
@@ -558,7 +546,7 @@ const scrollToBottomAndMarkRead = () => {
   trackUserInteraction()
   setTimeout(() => {
     markVisibleMessagesAsRead()
-  }, 500) // Delay más corto
+  }, 300) // Delay más corto
 }
 
 const scrollToBottom = () => {
@@ -572,7 +560,7 @@ const scrollToBottom = () => {
   })
 }
 
-// CORREGIDO: Observador de visibilidad del chat - MÁS PERMISIVO
+// ✅ MEJORADO: Observador de visibilidad del chat - MÁS SENSIBLE
 const setupVisibilityObserver = () => {
   if (!chatArea.value) return
   
@@ -590,33 +578,33 @@ const setupVisibilityObserver = () => {
           store.setChatViewingStatus(chatPartnerId.value, true)
           isPartnerViewingChat.value = true
           
-          // CORREGIDO: Marcar mensajes como leídos más rápido
+          // ✅ MEJORADO: Marcar mensajes como leídos más rápido
           clearTimeout(markReadDebounceTimer)
           markReadDebounceTimer = setTimeout(() => {
             markVisibleMessagesAsRead()
-          }, 1500) // Delay más corto
+          }, 800) // Delay más corto
           
           // Configurar timeout para cuando deje de ver
-          clearTimeout(partnerViewingTimeout)
-          partnerViewingTimeout = setTimeout(() => {
+          clearTimeout(partnerViewingTimeout.value)
+          partnerViewingTimeout.value = setTimeout(() => {
             handlePartnerStoppedViewing()
-          }, 3000) // 3 segundos de inactividad
+          }, 5000) // 5 segundos de inactividad
           
         } else if (chatPartnerId.value && wasVisible && !entry.isIntersecting) {
           // Notificar que dejó de ver el chat
           console.log(`🚫 Usuario dejó de ver el chat con ${chatPartnerId.value}`)
           handlePartnerStoppedViewing()
         }
-      }, 300)
+      }, 200)
     })
   }, {
-    threshold: 0.5 // Menos estricto para mejor detección
+    threshold: 0.3 // Menos estricto para mejor detección
   })
   
   visibilityObserver.value.observe(chatArea.value)
 }
 
-// Listener para cambios de visibilidad de la página
+// ✅ MEJORADO: Listener para cambios de visibilidad de la página
 const setupPageVisibilityListener = () => {
   const handleVisibilityChange = () => {
     console.log(`📄 Visibilidad de página: ${document.visibilityState}`)
@@ -627,14 +615,14 @@ const setupPageVisibilityListener = () => {
         handlePartnerStoppedViewing()
       }
     } else if (document.visibilityState === 'visible' && isChatVisible.value && chatPartnerId.value) {
-      // CORREGIDO: Al volver a la página, notificar que está viendo
+      // Al volver a la página, notificar que está viendo
       store.setChatViewingStatus(chatPartnerId.value, true)
       isPartnerViewingChat.value = true
       
       // Marcar mensajes como leídos después de un delay
       setTimeout(() => {
         markVisibleMessagesAsRead()
-      }, 2000)
+      }, 1000)
     }
     
     clearTimeout(visibilityDebounceTimer)
@@ -643,12 +631,12 @@ const setupPageVisibilityListener = () => {
         console.log(`🚫 Página oculta - dejando de ver chat con ${chatPartnerId.value}`)
         handlePartnerStoppedViewing()
       }
-    }, 300)
+    }, 200)
   }
   
   document.addEventListener('visibilitychange', handleVisibilityChange)
   
-  // Trackear clicks y teclas en el chat
+  // ✅ MEJORADO: Trackear clicks y teclas en el chat de forma más agresiva
   const trackInteraction = () => {
     if (isChatVisible.value && document.visibilityState === 'visible') {
       trackUserInteraction()
@@ -658,26 +646,31 @@ const setupPageVisibilityListener = () => {
         isPartnerViewingChat.value = true
         
         // Reiniciar el timeout de "dejar de ver"
-        clearTimeout(partnerViewingTimeout)
-        partnerViewingTimeout = setTimeout(() => {
+        clearTimeout(partnerViewingTimeout.value)
+        partnerViewingTimeout.value = setTimeout(() => {
           handlePartnerStoppedViewing()
-        }, 3000)
+        }, 5000)
         
-        // CORREGIDO: Marcar mensajes como leídos inmediatamente al interactuar
+        // Marcar mensajes como leídos inmediatamente al interactuar
         setTimeout(() => {
           markVisibleMessagesAsRead()
-        }, 1000)
+        }, 500)
       }
     }
   }
   
+  // Agregar event listeners más amplios
   document.addEventListener('click', trackInteraction)
   document.addEventListener('keydown', trackInteraction)
+  document.addEventListener('mousemove', trackInteraction)
+  document.addEventListener('touchstart', trackInteraction)
   
   return () => {
     document.removeEventListener('visibilitychange', handleVisibilityChange)
     document.removeEventListener('click', trackInteraction)
     document.removeEventListener('keydown', trackInteraction)
+    document.removeEventListener('mousemove', trackInteraction)
+    document.removeEventListener('touchstart', trackInteraction)
   }
 }
 
@@ -700,7 +693,7 @@ const handleIncomingMessage = (message) => {
   }
 }
 
-// CORREGIDO: Listener para cuando el partner marca mensajes como leídos
+// Listener para cuando el partner marca mensajes como leídos
 const setupMessagesReadListener = () => {
   if (store.socket) {
     store.socket.on('messagesRead', (data) => {
@@ -739,7 +732,7 @@ const setupStatusListeners = () => {
   }
 }
 
-// Setup de listeners de estado del partner
+// ✅ MEJORADO: Setup de listeners de estado del partner
 const setupViewingStatusListeners = () => {
   if (store.socket) {
     store.socket.on('chatViewingStatus', (data) => {
@@ -750,11 +743,7 @@ const setupViewingStatusListeners = () => {
         console.log(`🔄 Partner ${data.userId} ${data.isViewing ? 'está viendo' : 'dejó de ver'} el chat`)
         
         if (!data.isViewing) {
-          clearTimeout(partnerViewingTimeout)
-          // CORREGIDO: Cuando el partner deja de ver, marcar mensajes como leídos
-          setTimeout(() => {
-            markVisibleMessagesAsRead()
-          }, 1000)
+          clearTimeout(partnerViewingTimeout.value)
         }
       }
       
@@ -785,6 +774,10 @@ const loadMessages = async () => {
     
     setTimeout(() => {
       scrollToBottom()
+      // ✅ MEJORADO: Marcar mensajes como leídos inmediatamente al cargar
+      setTimeout(() => {
+        markVisibleMessagesAsRead()
+      }, 1000)
     }, 100)
     
   } catch (error) {
@@ -800,7 +793,7 @@ const selectEmployee = async (employee) => {
   
   isPartnerViewingChat.value = false
   userInteractedWithChat.value = false
-  clearTimeout(partnerViewingTimeout)
+  clearTimeout(partnerViewingTimeout.value)
   
   selectedEmployee.value = employee
   autoScrollEnabled.value = true
@@ -848,8 +841,6 @@ const sendMessage = async () => {
 
 // Lifecycle
 onMounted(async () => {
-  let removeVisibilityListener = () => {}
-  
   setupMessageListener()
   setupStatusListeners()
   setupViewingStatusListeners()
@@ -882,13 +873,11 @@ onMounted(async () => {
   } else {
     await loadMessages()
   }
-  
-  onUnmounted(() => {
-    removeVisibilityListener()
-  })
 })
 
 onUnmounted(() => {
+  removeVisibilityListener()
+  
   if (store.socket) {
     store.socket.off('newMessage', handleIncomingMessage)
     store.socket.off('chatViewingStatus')
@@ -907,7 +896,7 @@ onUnmounted(() => {
   clearTimeout(visibilityDebounceTimer)
   clearTimeout(markReadDebounceTimer)
   clearTimeout(interactionTimer)
-  clearTimeout(partnerViewingTimeout)
+  clearTimeout(partnerViewingTimeout.value)
 })
 
 // Watchers
@@ -920,7 +909,7 @@ watch(filteredMessages, () => {
     clearTimeout(markReadDebounceTimer)
     markReadDebounceTimer = setTimeout(() => {
       markVisibleMessagesAsRead()
-    }, 1000)
+    }, 800)
   }
 })
 
@@ -933,7 +922,7 @@ watch(isUserViewingThisChat, (isViewing) => {
       clearTimeout(markReadDebounceTimer)
       markReadDebounceTimer = setTimeout(() => {
         markVisibleMessagesAsRead()
-      }, 1500)
+      }, 1000)
     } else {
       store.setChatViewingStatus(chatPartnerId.value, false)
     }
@@ -959,7 +948,7 @@ watch(() => store.getUnreadCountFromUser(chatPartnerId.value), (newCount) => {
     clearTimeout(markReadDebounceTimer)
     markReadDebounceTimer = setTimeout(() => {
       markVisibleMessagesAsRead()
-    }, 1000)
+    }, 800)
   }
 })
 </script>
