@@ -9,7 +9,24 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}']
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // ✅ NUEVO: Configuración para notificaciones push
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365 // <== 365 days
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
+          }
+        ]
       },
       manifest: {
         name: 'Sistema de Tareas',
@@ -31,6 +48,19 @@ export default defineConfig({
             type: 'image/png'
           }
         ]
+      },
+      // ✅ NUEVO: Configuración para notificaciones
+      devOptions: {
+        enabled: true,
+        type: 'module'
+      },
+      // ✅ NUEVO: Estrategias de notificación
+      strategies: 'generateSW',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
+      // ✅ NUEVO: Configuración avanzada de PWA
+      pwaAssets: {
+        disabled: false,
+        config: true
       }
     })
   ],
@@ -48,7 +78,6 @@ export default defineConfig({
   optimizeDeps: {
     include: ['vue', 'vue-router', 'pinia', 'vuetify', 'socket.io-client']
   },
-  // Agregar esta configuración para desarrollo
   server: {
     host: true
   }

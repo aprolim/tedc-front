@@ -29,7 +29,7 @@ app.use(vuetify)
 import { useAppStore } from './stores/app.js'
 const store = useAppStore()
 
-// ✅ MODIFICADO: Lógica de inicialización con autenticación
+// ✅ CORREGIDO: Lógica de inicialización mejorada
 const initializeApp = async () => {
   console.log('🚀 Inicializando aplicación...')
   
@@ -42,14 +42,15 @@ const initializeApp = async () => {
   if (isAuthenticated) {
     console.log('✅ Usuario autenticado:', store.user.name)
     
-    // Redirigir según rol después de montar
+    // ✅ CORREGIDO: Redirigir según rol después de montar
     setTimeout(() => {
+      const currentPath = window.location.pathname
       if (store.isAdmin) {
-        if (!window.location.pathname.includes('/admin')) {
+        if (!currentPath.includes('/admin')) {
           router.push('/admin')
         }
       } else {
-        if (!window.location.pathname.includes('/employee')) {
+        if (!currentPath.includes('/employee')) {
           router.push('/employee')
         }
       }
@@ -63,6 +64,40 @@ const initializeApp = async () => {
   
   console.log('🎯 Aplicación lista')
 }
+
+// ✅ CORREGIDO: Inicializar notificaciones y service worker
+import notificationService from './services/notifications.js'
+
+// Inicializar notificaciones
+notificationService.init().then(() => {
+  console.log('🔔 Servicio de notificaciones inicializado')
+})
+
+// ✅ NUEVO: Listener para cambios de conexión de socket
+setInterval(() => {
+  if (!store.isSocketConnected && store.isAuthenticated) {
+    console.log('🔄 Verificando conexión de socket...')
+    store.reconnectSocket()
+  }
+}, 5000) // Verificar cada 5 segundos
+
+// Listener para cambios de visibilidad de la página
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    console.log('📱 App visible, pausar notificaciones')
+  } else {
+    console.log('📱 App en segundo plano, notificaciones activas')
+  }
+})
+
+// Manejar errores globales
+window.addEventListener('error', (event) => {
+  console.error('❌ Error global:', event.error)
+})
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('❌ Promise rechazada no manejada:', event.reason)
+})
 
 // Inicializar y montar
 initializeApp().then(() => {

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import socketService from '../services/socket.js'
 import { api } from '../services/api.js'
+import notificationService from '../services/notifications.js'
 
 export const useAppStore = defineStore('app', () => {
   const user = ref(null)
@@ -16,9 +17,37 @@ export const useAppStore = defineStore('app', () => {
   const loading = ref(false)
   const authError = ref(null)
 
+  // Computed properties
   const socketConnected = computed(() => isSocketConnected.value)
+  const currentUser = computed(() => user.value)
+  const totalUnreadCount = computed(() => getAllUnreadMessages().length)
+  const isAdmin = computed(() => user.value?.role === 'admin')
+  const isEmployee = computed(() => user.value?.role === 'employee')
+  const isAuthenticated = computed(() => !!user.value)
+  
+  const onlineEmployeesCount = computed(() => {
+    return Object.values(onlineUsers.value).filter(userData => 
+      userData.status === 'online' && userData.userId !== 1
+    ).length
+  })
+  
+  const onlineEmployees = computed(() => {
+    const employees = []
+    for (const [userId, userData] of Object.entries(onlineUsers.value)) {
+      if (userData.status === 'online' && userId !== '1') {
+        employees.push({
+          id: parseInt(userId),
+          ...userData
+        })
+      }
+    }
+    return employees
+  })
+  
+  const canNotify = computed(() => notificationService.canNotify())
+  const notificationPermission = computed(() => notificationService.getPermissionStatus())
 
-  // ✅ NUEVO: Función de login
+  // Authentication
   const login = async (email, password) => {
     loading.value = true
     authError.value = null
@@ -35,7 +64,6 @@ export const useAppStore = defineStore('app', () => {
         console.log('✅ Login exitoso:', response.user.name)
         setUser(response.user)
         
-        // Guardar en localStorage para persistencia
         localStorage.setItem('user', JSON.stringify(response.user))
         localStorage.setItem('token', response.token)
         
@@ -52,28 +80,19 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  // ✅ NUEVO: Función de logout
-  // ✅ CORREGIDO: Función de logout mejorada
   const logout = () => {
     console.log('🚪 Ejecutando logout en store...')
     
-    // Guardar referencia al usuario actual para logging
     const currentUserName = user.value?.name
     
-    // 1. Desconectar socket primero
     if (socket.value) {
-      console.log('🔌 Desconectando socket...')
       socket.value.disconnect()
       socket.value = null
     }
     
-    // 2. Limpiar localStorage
-    console.log('🗑️ Limpiando localStorage...')
     localStorage.removeItem('user')
     localStorage.removeItem('token')
     
-    // 3. Resetear estado reactivo
-    console.log('🔄 Reseteando estado...')
     user.value = null
     tasks.value = []
     messages.value = []
@@ -88,7 +107,6 @@ export const useAppStore = defineStore('app', () => {
     console.log(`✅ Logout completado para: ${currentUserName || 'Usuario'}`)
   }
 
-  // ✅ MODIFICADO: setUser ahora verifica si ya está inicializado
   const setUser = (userData) => {
     if (user.value && user.value.id === userData?.id) {
       console.log('⚠️ Usuario ya establecido, ignorando...')
@@ -104,7 +122,6 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  // ✅ NUEVO: Verificar autenticación al cargar la app
   const checkAuth = () => {
     const savedUser = localStorage.getItem('user')
     const savedToken = localStorage.getItem('token')
@@ -124,17 +141,26 @@ export const useAppStore = defineStore('app', () => {
     return false
   }
 
+  // Socket Management - ✅ CORREGIDO COMPLETAMENTE
   const initializeSocket = () => {
     console.log('🔌 Inicializando socket para user:', user.value?.id)
+    
+    if (socket.value) {
+      console.log('⚠️ Socket ya existe, cerrando conexión anterior...')
+      socket.value.disconnect()
+      socket.value = null
+    }
+    
     socket.value = socketService.connect()
+    setupSocketListeners()
     
     socket.value.on('connect', () => {
       console.log('✅ Socket CONECTADO - User ID:', user.value?.id)
       isSocketConnected.value = true
       
-      // Notificar que el usuario está en línea
       if (user.value) {
         socket.value.emit('userOnline', user.value.id)
+        console.log('📢 Emitiendo userOnline para:', user.value.id)
       }
     })
     
@@ -147,30 +173,64 @@ export const useAppStore = defineStore('app', () => {
       console.log('❌ Error de conexión socket:', error)
       isSocketConnected.value = false
     })
+  }
 
-    // Configurar listeners de eventos
+  // ✅ CORREGIDO: Setup completo de listeners
+  const setupSocketListeners = () => {
+    if (!socket.value) {
+      console.log('❌ No hay socket para configurar listeners')
+      return
+    }
+
+    console.log('🔧 Configurando listeners de socket...')
+
+    // Remover todos los listeners antiguos primero
+    const events = [
+      'newMessage', 'userStatusUpdate', 'messagesRead', 
+      'chatViewingStatus', 'taskCreated', 'taskUpdated', 
+      'locationUpdate', 'taskProgress'
+    ]
+    
+    events.forEach(event => {
+      socket.value.off(event)
+    })
+
+    // Configurar nuevos listeners
     socket.value.on('newMessage', (message) => {
-      console.log('📨 Nuevo mensaje recibido en store')
-      console.log('   De:', message.senderId, 'Para:', message.receiverId)
-      console.log('   Contenido:', message.content)
-      
-      messages.value.push(message)
+      console.log('📨 Nuevo mensaje recibido en store:', message)
+      // Evitar duplicados
+      const exists = messages.value.find(m => m.id === message.id)
+      if (!exists) {
+        messages.value.push(message)
+        console.log('✅ Mensaje agregado al store')
+        
+        // Mostrar notificación si corresponde
+        if (message.receiverId === user.value?.id && document.visibilityState !== 'visible') {
+          const senderName = message.senderId === 1 ? 'Administrador' : `Empleado ${message.senderId}`
+          showNewMessageNotification(senderName, message.content)
+        }
+      }
     })
     
     socket.value.on('userStatusUpdate', (data) => {
       console.log('🔄 Actualizando estado de usuarios:', data)
-      onlineUsers.value = data.onlineUsers
+      onlineUsers.value = { ...onlineUsers.value, ...data.onlineUsers }
     })
     
     socket.value.on('messagesRead', (data) => {
       console.log('📖 Mensajes marcados como leídos por:', data.readerId)
       
+      let markedCount = 0
       messages.value.forEach(msg => {
         if (Array.isArray(data.messageIds) && data.messageIds.includes(msg.id)) {
-          msg.read = true
-          msg.readAt = new Date()
+          if (!msg.read) {
+            msg.read = true
+            msg.readAt = new Date()
+            markedCount++
+          }
         }
       })
+      console.log(`✅ ${markedCount} mensajes marcados como leídos`)
     })
     
     socket.value.on('chatViewingStatus', (data) => {
@@ -178,17 +238,31 @@ export const useAppStore = defineStore('app', () => {
       chatViewingStatus.value[data.userId] = data.isViewing
     })
     
-    // Listeners existentes
     socket.value.on('taskCreated', (task) => {
-      console.log('📝 Nueva tarea:', task.title)
-      tasks.value.push(task)
+      console.log('📝 Nueva tarea recibida:', task.title)
+      // Evitar duplicados
+      const exists = tasks.value.find(t => t.id === task.id)
+      if (!exists) {
+        tasks.value.push(task)
+        console.log('✅ Tarea agregada al store')
+        
+        // Notificar si la tarea es para el usuario actual
+        const assignedTo = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo]
+        if (assignedTo.includes(user.value?.id) && document.visibilityState !== 'visible') {
+          showTaskNotification(task.title, 'Administrador')
+        }
+      }
     })
     
     socket.value.on('taskUpdated', (task) => {
-      console.log('🔄 Tarea actualizada:', task.title)
+      console.log('🔄 Tarea actualizada recibida:', task.title)
       const index = tasks.value.findIndex(t => t.id === task.id)
       if (index !== -1) {
         tasks.value[index] = task
+        console.log('✅ Tarea actualizada en store')
+      } else {
+        console.log('⚠️ Tarea no encontrada en store, agregando...')
+        tasks.value.push(task)
       }
     })
     
@@ -196,16 +270,179 @@ export const useAppStore = defineStore('app', () => {
       console.log('📍 Ubicación actualizada - User:', data.userId)
       userLocations.value[data.userId] = data.location
     })
+    
+    socket.value.on('taskProgress', (data) => {
+      console.log('📊 Progreso de tarea recibido:', data)
+      const task = tasks.value.find(t => t.id === data.taskId)
+      if (task && data.userId && data.progress !== undefined) {
+        if (!task.individualProgress) {
+          task.individualProgress = {}
+        }
+        task.individualProgress[data.userId] = data.progress
+        
+        // Recalcular progreso general
+        const progressValues = Object.values(task.individualProgress)
+        const totalProgress = progressValues.reduce((sum, p) => sum + p, 0)
+        task.progress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
+        
+        console.log(`✅ Progreso actualizado: ${task.title} - ${task.progress}%`)
+      }
+    })
+
+    console.log('✅ Todos los listeners de socket configurados')
   }
 
-  // Funciones existentes (sin cambios)
+  // Notifications
+  const requestNotificationPermission = async () => {
+    return await notificationService.requestPermission()
+  }
+
+  const showNewMessageNotification = async (senderName, message, messageCount = 1) => {
+    if (!user.value) return false
+    
+    if (document.visibilityState === 'visible') {
+      console.log('📱 App en primer plano, no mostrar notificación')
+      return false
+    }
+
+    return await notificationService.showNewMessageNotification(senderName, message, messageCount)
+  }
+
+  const showTaskNotification = async (taskTitle, assignedBy) => {
+    if (!user.value) return false
+    
+    if (document.visibilityState === 'visible') {
+      return false
+    }
+
+    return await notificationService.showTaskAssignedNotification(taskTitle, assignedBy)
+  }
+
+  // Task Management - ✅ CORREGIDO
+  const updateIndividualProgress = async (taskId, progress) => {
+    if (!user.value?.id) {
+      console.log('❌ No hay usuario logueado para actualizar progreso')
+      throw new Error('Usuario no autenticado')
+    }
+    
+    try {
+      console.log(`📊 Actualizando progreso: taskId=${taskId}, userId=${user.value.id}, progress=${progress}`)
+      
+      const response = await api.put(`/tasks/${taskId}/progress/${user.value.id}`, {
+        progress
+      })
+      
+      console.log('✅ Respuesta del servidor:', response)
+      
+      // Actualizar localmente inmediatamente para mejor UX
+      const taskIndex = tasks.value.findIndex(t => t.id === taskId)
+      if (taskIndex !== -1) {
+        if (!tasks.value[taskIndex].individualProgress) {
+          tasks.value[taskIndex].individualProgress = {}
+        }
+        tasks.value[taskIndex].individualProgress[user.value.id] = progress
+        
+        // Recalcular progreso general
+        const progressValues = Object.values(tasks.value[taskIndex].individualProgress)
+        const totalProgress = progressValues.reduce((sum, p) => sum + p, 0)
+        tasks.value[taskIndex].progress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
+        
+        console.log(`✅ Progreso actualizado localmente: ${tasks.value[taskIndex].title} - ${tasks.value[taskIndex].progress}%`)
+      }
+      
+      // Emitir evento para notificar a otros usuarios
+      if (socket.value && socket.value.connected) {
+        socket.value.emit('taskProgress', {
+          taskId,
+          progress,
+          userId: user.value.id
+        })
+        console.log('📢 Evento taskProgress emitido')
+      }
+      
+      return response
+    } catch (error) {
+      console.error('❌ Error actualizando progreso individual:', error)
+      throw error
+    }
+  }
+
+  const getMyProgress = (task) => {
+    if (!user.value?.id) {
+      console.log(`📊 getMyProgress: No hay usuario logueado`)
+      return 0
+    }
+    
+    if (!task.individualProgress) {
+      console.log(`📊 getMyProgress: task="${task.title}" no tiene individualProgress`)
+      return 0
+    }
+    
+    const userProgress = task.individualProgress[user.value.id]
+    console.log(`📊 getMyProgress: task="${task.title}", userProgress=${userProgress}`)
+    return userProgress !== undefined ? userProgress : 0
+  }
+
+  const getOtherUsersProgress = (task) => {
+    if (!task.individualProgress || !user.value?.id) {
+      console.log(`📊 getOtherUsersProgress: No hay datos suficientes`)
+      return []
+    }
+    
+    const otherProgress = Object.entries(task.individualProgress)
+      .filter(([userId]) => parseInt(userId) !== user.value.id)
+      .map(([userId, progress]) => ({
+        userId: parseInt(userId),
+        progress,
+        userName: `Empleado ${userId}`
+      }))
+    
+    console.log(`📊 getOtherUsersProgress: ${otherProgress.length} otros usuarios`)
+    return otherProgress
+  }
+
+  // Data Management
+  const setTasks = (tasksData) => {
+    console.log('📋 Estableciendo tareas:', tasksData.length)
+    console.log('📄 Tareas recibidas:', tasksData.map(t => ({ 
+      id: t.id, 
+      title: t.title, 
+      assignedTo: t.assignedTo,
+      individualProgress: t.individualProgress 
+    })))
+    tasks.value = tasksData
+  }
+
+  const setMessages = (messagesData) => {
+    console.log('💾 Guardando mensajes:', messagesData.length)
+    
+    const existingMessagesMap = new Map()
+    messages.value.forEach(msg => {
+      if (msg.read) {
+        existingMessagesMap.set(msg.id, { read: true, readAt: msg.readAt })
+      }
+    })
+    
+    messagesData.forEach(msg => {
+      const existingState = existingMessagesMap.get(msg.id)
+      if (existingState) {
+        msg.read = existingState.read
+        msg.readAt = existingState.readAt
+      }
+    })
+    
+    messages.value = messagesData
+  }
+
+  // Message Management
   const markMessagesAsRead = (senderId, specificMessageIds = null) => {
-    if (socket.value && user.value) {
+    if (socket.value && socket.value.connected && user.value) {
       socket.value.emit('markMessagesAsRead', {
         userId: user.value.id,
         senderId: senderId,
         messageIds: specificMessageIds
       })
+      console.log('📢 Evento markMessagesAsRead emitido')
       
       if (specificMessageIds) {
         messages.value.forEach(msg => {
@@ -218,25 +455,9 @@ export const useAppStore = defineStore('app', () => {
           }
         })
       }
+    } else {
+      console.log('❌ Socket no disponible para marcar mensajes como leídos')
     }
-  }
-
-  const setChatViewingStatus = (partnerId, isViewing) => {
-    if (socket.value && user.value) {
-      socket.value.emit('userViewingChat', {
-        userId: user.value.id,
-        partnerId,
-        isViewing
-      })
-    }
-  }
-
-  const updateChatViewingStatus = (data) => {
-    chatViewingStatus.value[data.userId] = data.isViewing
-  }
-
-  const isPartnerViewingChat = (partnerId) => {
-    return chatViewingStatus.value[partnerId] || false
   }
 
   const markAllMessagesAsRead = (senderId) => {
@@ -249,15 +470,6 @@ export const useAppStore = defineStore('app', () => {
     if (unreadMessages.length > 0) {
       markMessagesAsRead(senderId, unreadMessages)
     }
-  }
-
-  const isUserOnline = (userId) => {
-    return onlineUsers.value[userId]?.status === 'online'
-  }
-
-  const getUserLastSeen = (userId) => {
-    const userData = onlineUsers.value[userId]
-    return userData ? userData.lastSeen : null
   }
 
   const getUnreadCountFromUser = (senderId) => {
@@ -283,36 +495,59 @@ export const useAppStore = defineStore('app', () => {
     )
   }
 
-  const setTasks = (tasksData) => {
-    console.log('📋 Estableciendo tareas:', tasksData.length)
-    tasks.value = tasksData
+  // Chat Viewing Status
+  const setChatViewingStatus = (partnerId, isViewing) => {
+    if (socket.value && socket.value.connected && user.value) {
+      socket.value.emit('userViewingChat', {
+        userId: user.value.id,
+        partnerId,
+        isViewing
+      })
+      console.log(`📢 userViewingChat emitido: ${isViewing ? 'viendo' : 'dejó de ver'} chat con ${partnerId}`)
+    } else {
+      console.log('❌ Socket no disponible para enviar estado de visualización')
+    }
   }
 
-  const setMessages = (messagesData) => {
-    console.log('💾 Guardando mensajes:', messagesData.length)
-    
-    const existingMessagesMap = new Map()
-    messages.value.forEach(msg => {
-      if (msg.read) {
-        existingMessagesMap.set(msg.id, { read: true, readAt: msg.readAt })
-      }
-    })
-    
-    messagesData.forEach(msg => {
-      const existingState = existingMessagesMap.get(msg.id)
-      if (existingState) {
-        msg.read = existingState.read
-        msg.readAt = existingState.readAt
-      }
-    })
-    
-    messages.value = messagesData
+  const updateChatViewingStatus = (data) => {
+    chatViewingStatus.value[data.userId] = data.isViewing
   }
 
+  const isPartnerViewingChat = (partnerId) => {
+    return chatViewingStatus.value[partnerId] || false
+  }
+
+  // Location Management - ✅ CORREGIDO
   const updateUserLocation = (data) => {
     userLocations.value[data.userId] = data.location
   }
 
+  const sendUserLocation = (location) => {
+    if (socket.value && socket.value.connected && user.value) {
+      socket.value.emit('userLocation', {
+        userId: user.value.id,
+        location: {
+          ...location,
+          lastUpdate: new Date()
+        }
+      })
+      console.log('📍 Ubicación enviada al servidor')
+    } else {
+      console.log('❌ Socket no disponible para enviar ubicación')
+    }
+  }
+
+  // User Status
+  const isUserOnline = (userId) => {
+    return onlineUsers.value[userId]?.status === 'online'
+  }
+
+  const getUserLastSeen = (userId) => {
+    const userData = onlineUsers.value[userId]
+    return userData ? userData.lastSeen : null
+  }
+
+  // Utility Functions
   const addLocalMessage = (message) => {
     messages.value.push({
       ...message,
@@ -336,6 +571,13 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  const reconnectSocket = () => {
+    if (!isSocketConnected.value && user.value) {
+      console.log('🔄 Intentando reconectar socket...')
+      initializeSocket()
+    }
+  }
+
   return {
     // Estados
     user,
@@ -347,42 +589,62 @@ export const useAppStore = defineStore('app', () => {
     chatViewingStatus,
     loading,
     authError,
-    isSocketConnected: socketConnected,
     
-    // ✅ NUEVAS: Funciones de autenticación
+    // Computed
+    isSocketConnected: socketConnected,
+    currentUser,
+    totalUnreadCount,
+    isAdmin,
+    isEmployee,
+    isAuthenticated,
+    onlineEmployeesCount,
+    onlineEmployees,
+    canNotify,
+    notificationPermission,
+    
+    // Authentication
     login,
     logout,
     checkAuth,
-    
-    // Setters
     setUser,
-    setTasks,
-    setMessages,
-    updateUserLocation,
     
-    // Funciones de mensajes
+    // Socket
+    reconnectSocket,
+    
+    // Notifications
+    requestNotificationPermission,
+    showNewMessageNotification,
+    showTaskNotification,
+    
+    // Tasks
+    updateIndividualProgress,
+    getMyProgress,
+    getOtherUsersProgress,
+    setTasks,
+    
+    // Messages
+    setMessages,
     markMessagesAsRead,
     markAllMessagesAsRead,
-    isUserOnline,
-    getUserLastSeen,
     getUnreadCountFromUser,
     getAllUnreadMessages,
     getUnreadMessagesFromUser,
+    addLocalMessage,
     
-    // Funciones de visibilidad del chat
+    // Chat
     setChatViewingStatus,
     updateChatViewingStatus,
     isPartnerViewingChat,
     
-    // Funciones de utilidad
-    addLocalMessage,
-    clearData,
+    // Location
+    updateUserLocation,
+    sendUserLocation,
     
-    // Computed adicionales para conveniencia
-    currentUser: computed(() => user.value),
-    totalUnreadCount: computed(() => getAllUnreadMessages().length),
-    isAdmin: computed(() => user.value?.role === 'admin'),
-    isEmployee: computed(() => user.value?.role === 'employee'),
-    isAuthenticated: computed(() => !!user.value) // ✅ NUEVO
+    // Users
+    isUserOnline,
+    getUserLastSeen,
+    
+    // Utility
+    clearData
   }
 })

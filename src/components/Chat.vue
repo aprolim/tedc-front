@@ -267,8 +267,14 @@ let removeVisibilityListener = () => {}
 const currentUserId = computed(() => store.user?.id)
 const chatPartnerId = computed(() => props.isAdmin ? selectedEmployee.value?.id : 1)
 
+// ✅ CORREGIDO: Solo contar empleados en línea (excluyendo admin)
 const onlineCount = computed(() => {
-  return Object.values(store.onlineUsers).filter(user => user.status === 'online').length
+  if (props.isAdmin) {
+    return store.onlineEmployeesCount
+  } else {
+    // Para empleados, contar admin si está en línea
+    return store.isUserOnline(1) ? 1 : 0
+  }
 })
 
 // Contar todos los mensajes no leídos
@@ -674,7 +680,7 @@ const setupPageVisibilityListener = () => {
   }
 }
 
-// Handler para mensajes entrantes
+// ✅ MEJORADO: Handler para mensajes entrantes con notificaciones
 const handleIncomingMessage = (message) => {
   console.log('📨 Mensaje entrante en chat:', message)
   
@@ -685,6 +691,24 @@ const handleIncomingMessage = (message) => {
   if (!isRelevantForCurrentUser) return
   
   console.log('💡 Mensaje recibido, se marcará como leído cuando sea visible')
+  
+  // ✅ NUEVO: Mostrar notificación si el mensaje es para el usuario actual
+  if (message.receiverId === currentUserId.value && document.visibilityState !== 'visible') {
+    console.log('🔔 Mostrando notificación de mensaje nuevo')
+    
+    // Obtener nombre del remitente
+    let senderName = 'Administrador'
+    if (props.isAdmin && selectedEmployee.value) {
+      senderName = selectedEmployee.value.name
+    } else if (!props.isAdmin && message.senderId !== 1) {
+      // Buscar nombre del empleado que envió el mensaje
+      const employee = employees.value.find(emp => emp.id === message.senderId)
+      senderName = employee?.name || 'Empleado'
+    }
+    
+    // Mostrar notificación
+    store.showNewMessageNotification(senderName, message.content)
+  }
   
   if (isAtBottom.value) {
     setTimeout(() => {
