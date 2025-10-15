@@ -232,7 +232,7 @@
         <v-card-actions>
           <v-spacer></v-spacer>
           <v-btn @click="showDialog = false" variant="text">Cancelar</v-btn>
-          <v-btn color="primary" @click="createTask" :disabled="!newTask.title || newTask.assignedTo.length === 0">
+          <v-btn color="primary" @click="createTask" :disabled="!newTask.title || newTask.assignedTo.length === 0" :loading="creatingTask">
             Crear Tarea
           </v-btn>
         </v-card-actions>
@@ -256,6 +256,7 @@ const newTask = ref({
   assignedTo: [],
   dueDate: ''
 })
+const creatingTask = ref(false) // ✅ NUEVO: Estado para controlar loading
 
 const progressOptions = [
   { value: 0, label: '0% - Reiniciar' },
@@ -385,10 +386,11 @@ onMounted(async () => {
       }
     })
     
-    store.socket.on('taskCreated', (task) => {
-      console.log('📝 Nueva tarea creada:', task.title)
-      store.tasks.push(task)
-    })
+    // ❌ ELIMINADO: No necesitamos escuchar taskCreated aquí porque ya se maneja en el store
+    // store.socket.on('taskCreated', (task) => {
+    //   console.log('📝 Nueva tarea creada:', task.title)
+    //   store.tasks.push(task) // ❌ ESTO CAUSABA LA DUPLICACIÓN
+    // })
   }
 })
 
@@ -419,6 +421,7 @@ const loadEmployees = async () => {
   }
 }
 
+// ✅ CORREGIDO: Función createTask mejorada para evitar duplicados
 const createTask = async () => {
   if (!newTask.value.title.trim()) {
     alert('El título de la tarea es requerido')
@@ -430,19 +433,29 @@ const createTask = async () => {
     return
   }
 
+  creatingTask.value = true // ✅ Mostrar loading
+
   try {
+    console.log('📝 Creando nueva tarea...')
     const task = await api.post('/tasks', {
       ...newTask.value,
       assignedBy: store.user.id
     })
     
+    console.log('✅ Tarea creada exitosamente:', task.title)
+    console.log('📋 Tarea recibida del servidor:', task)
+    
+    // ✅ La tarea ya se agregó automáticamente desde la respuesta del API
+    // NO necesitamos agregarla manualmente aquí
+    
     showDialog.value = false
     newTask.value = { title: '', description: '', assignedTo: [], dueDate: '' }
     
-    console.log('✅ Tarea creada exitosamente:', task.title)
   } catch (error) {
     console.error('❌ Error creando tarea:', error)
     alert('Error creando tarea: ' + error.message)
+  } finally {
+    creatingTask.value = false // ✅ Ocultar loading
   }
 }
 

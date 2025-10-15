@@ -57,9 +57,9 @@ export const useAppStore = defineStore('app', () => {
       }
     }
     return employees
-  })
-  
-  const canNotify = computed(() => notificationService.canNotify())
+  })  
+
+  const canNotify = computed(() => notificationService.canNotify())  
   const notificationPermission = computed(() => notificationService.getPermissionStatus())
 
   // ✅ NUEVA FUNCIÓN: Limpiar datos de usuario
@@ -223,7 +223,6 @@ export const useAppStore = defineStore('app', () => {
     })
   }
 
-  // ... (el resto del código del store se mantiene igual)
   const setupSocketListeners = () => {
     if (!socket.value) {
       console.log('❌ No hay socket para configurar listeners')
@@ -282,17 +281,48 @@ export const useAppStore = defineStore('app', () => {
       chatViewingStatus.value[data.userId] = data.isViewing
     })
     
+    // ✅ CORREGIDO: Listener de taskCreated - EVITA DUPLICADOS
     socket.value.on('taskCreated', (task) => {
-      console.log('📝 Nueva tarea recibida:', task.title)
+      console.log('📝 Nueva tarea recibida por socket:', task.title)
+      console.log('🔍 Verificando si la tarea ya existe...')
+      
+      // ✅ VERIFICACIÓN ROBUSTA PARA EVITAR DUPLICADOS
       const exists = tasks.value.find(t => t.id === task.id)
-      if (!exists) {
-        tasks.value.push(task)
-        console.log('✅ Tarea agregada al store')
+      
+      if (exists) {
+        console.log('⚠️ Tarea ya existe en store, ignorando duplicado del socket')
+        console.log('📋 Tarea existente:', exists.title)
+        return
+      }
+      
+      // ✅ VERIFICAR SI LA TAREA ES RELEVANTE PARA EL USUARIO ACTUAL
+      let isRelevant = false
+      
+      if (user.value?.role === 'admin') {
+        // Admin ve todas las tareas
+        isRelevant = true
+        console.log('👑 Admin - Tarea relevante (ve todas)')
+      } else if (user.value) {
+        // Empleado solo ve tareas asignadas a él
+        const assignedTo = Array.isArray(task.assignedTo) 
+          ? task.assignedTo.map(id => parseInt(id))
+          : [parseInt(task.assignedTo)]
         
-        const assignedTo = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo]
-        if (assignedTo.includes(user.value?.id) && document.visibilityState !== 'visible') {
+        isRelevant = assignedTo.includes(user.value.id)
+        console.log(`👤 Empleado ${user.value.id} - Tarea relevante: ${isRelevant}`)
+        console.log(`📋 Tarea asignada a: ${assignedTo.join(', ')}`)
+      }
+      
+      if (isRelevant) {
+        tasks.value.push(task)
+        console.log('✅ Tarea agregada desde socket (relevante para usuario)')
+        
+        // ✅ Mostrar notificación si es empleado y la tarea es para él
+        if (user.value?.role === 'employee' && document.visibilityState !== 'visible') {
           showTaskNotification(task.title, 'Administrador')
         }
+      } else {
+        console.log('ℹ️ Tarea recibida pero no relevante para usuario actual, ignorando')
       }
     })
     
@@ -301,10 +331,25 @@ export const useAppStore = defineStore('app', () => {
       const index = tasks.value.findIndex(t => t.id === task.id)
       if (index !== -1) {
         tasks.value[index] = task
-        console.log('✅ Tarea actualizada en store')
+        console.log('✅ Tarea actualizada en store desde socket')
       } else {
-        console.log('⚠️ Tarea no encontrada en store, agregando...')
-        tasks.value.push(task)
+        console.log('⚠️ Tarea no encontrada en store, verificando relevancia...')
+        
+        // ✅ Misma verificación de relevancia que en taskCreated
+        let isRelevant = false
+        if (user.value?.role === 'admin') {
+          isRelevant = true
+        } else if (user.value) {
+          const assignedTo = Array.isArray(task.assignedTo) 
+            ? task.assignedTo.map(id => parseInt(id))
+            : [parseInt(task.assignedTo)]
+          isRelevant = assignedTo.includes(user.value.id)
+        }
+        
+        if (isRelevant) {
+          tasks.value.push(task)
+          console.log('✅ Tarea agregada desde actualización (relevante)')
+        }
       }
     })
     
