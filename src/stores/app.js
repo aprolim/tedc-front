@@ -17,6 +17,21 @@ export const useAppStore = defineStore('app', () => {
   const loading = ref(false)
   const authError = ref(null)
 
+  // ✅ NUEVO: Generar ID único por pestaña
+  const getSessionId = () => {
+    let sessionId = sessionStorage.getItem('app_session_id')
+    if (!sessionId) {
+      sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+      sessionStorage.setItem('app_session_id', sessionId)
+    }
+    return sessionId
+  }
+
+  // ✅ NUEVO: Prefijo único para cada pestaña
+  const getStorageKey = (key) => {
+    return `${getSessionId()}_${key}`
+  }
+
   // Computed properties
   const socketConnected = computed(() => isSocketConnected.value)
   const currentUser = computed(() => user.value)
@@ -47,6 +62,26 @@ export const useAppStore = defineStore('app', () => {
   const canNotify = computed(() => notificationService.canNotify())
   const notificationPermission = computed(() => notificationService.getPermissionStatus())
 
+  // ✅ NUEVA FUNCIÓN: Limpiar datos de usuario
+  const clearUserData = () => {
+    console.log('🧹 Limpiando datos del usuario anterior...')
+    tasks.value = []
+    messages.value = []
+    userLocations.value = {}
+    onlineUsers.value = {}
+    chatViewingStatus.value = {}
+    authError.value = null
+    
+    // Cerrar socket del usuario anterior
+    if (socket.value) {
+      console.log('🔌 Cerrando socket del usuario anterior')
+      socket.value.disconnect()
+      socket.value = null
+      isSocketConnected.value = false
+      initialized.value = false
+    }
+  }
+
   // Authentication
   const login = async (email, password) => {
     loading.value = true
@@ -54,6 +89,7 @@ export const useAppStore = defineStore('app', () => {
     
     try {
       console.log('🔐 Intentando login con:', email)
+      console.log('🆔 Session ID:', getSessionId())
       
       const response = await api.post('/auth/login', {
         email,
@@ -62,10 +98,12 @@ export const useAppStore = defineStore('app', () => {
       
       if (response.success) {
         console.log('✅ Login exitoso:', response.user.name)
+        
+        // ✅ CORREGIDO: Usar sessionStorage en lugar de localStorage
         setUser(response.user)
         
-        localStorage.setItem('user', JSON.stringify(response.user))
-        localStorage.setItem('token', response.token)
+        sessionStorage.setItem(getStorageKey('user'), JSON.stringify(response.user))
+        sessionStorage.setItem(getStorageKey('token'), response.token)
         
         return { success: true, user: response.user }
       } else {
@@ -85,35 +123,31 @@ export const useAppStore = defineStore('app', () => {
     
     const currentUserName = user.value?.name
     
-    if (socket.value) {
-      socket.value.disconnect()
-      socket.value = null
-    }
+    clearUserData()
     
-    localStorage.removeItem('user')
-    localStorage.removeItem('token')
+    // ✅ CORREGIDO: Limpiar sessionStorage de esta pestaña
+    sessionStorage.removeItem(getStorageKey('user'))
+    sessionStorage.removeItem(getStorageKey('token'))
     
     user.value = null
-    tasks.value = []
-    messages.value = []
-    userLocations.value = {}
-    onlineUsers.value = {}
-    chatViewingStatus.value = {}
-    initialized.value = false
-    isSocketConnected.value = false
-    authError.value = null
-    loading.value = false
     
     console.log(`✅ Logout completado para: ${currentUserName || 'Usuario'}`)
   }
 
+  // ✅ CORREGIDO: Función setUser mejorada
   const setUser = (userData) => {
-    if (user.value && user.value.id === userData?.id) {
-      console.log('⚠️ Usuario ya establecido, ignorando...')
-      return
+    console.log('👤 SET USER llamado con:', userData?.name)
+    console.log('🆔 Session ID:', getSessionId())
+    
+    if (user.value && user.value.id !== userData?.id) {
+      console.log(`🔄 Cambiando usuario: ${user.value.name} → ${userData.name}`)
+      clearUserData()
+    } else if (!user.value && userData) {
+      console.log('🆕 Estableciendo usuario inicial:', userData.name)
+    } else if (user.value && user.value.id === userData?.id) {
+      console.log('ℹ️ Mismo usuario, manteniendo datos existentes')
     }
     
-    console.log('👤 SET USER llamado con:', userData)
     user.value = userData
     
     if (userData && !initialized.value) {
@@ -123,27 +157,41 @@ export const useAppStore = defineStore('app', () => {
   }
 
   const checkAuth = () => {
-    const savedUser = localStorage.getItem('user')
-    const savedToken = localStorage.getItem('token')
+    // ✅ CORREGIDO: Usar sessionStorage con prefijo único
+    const savedUser = sessionStorage.getItem(getStorageKey('user'))
+    const savedToken = sessionStorage.getItem(getStorageKey('token'))
+    
+    console.log('🔍 Verificando autenticación...')
+    console.log('🆔 Session ID:', getSessionId())
+    console.log('📁 Usuario en sessionStorage:', savedUser ? 'Sí' : 'No')
     
     if (savedUser && savedToken) {
       try {
         const userData = JSON.parse(savedUser)
-        console.log('🔍 Usuario encontrado en localStorage:', userData.name)
+        console.log('🔍 Usuario encontrado en sessionStorage:', userData.name)
         setUser(userData)
         return true
       } catch (error) {
-        console.error('❌ Error cargando usuario de localStorage:', error)
+        console.error('❌ Error cargando usuario de sessionStorage:', error)
         logout()
         return false
+      }
+    } else {
+      console.log('🔍 No hay usuario autenticado en esta pestaña')
+      // ✅ Asegurar que no hay datos residuales
+      if (user.value) {
+        console.log('⚠️ Hay usuario en store pero no en sessionStorage, limpiando...')
+        clearUserData()
+        user.value = null
       }
     }
     return false
   }
 
-  // Socket Management - ✅ CORREGIDO COMPLETAMENTE
+  // Socket Management
   const initializeSocket = () => {
     console.log('🔌 Inicializando socket para user:', user.value?.id)
+    console.log('🆔 Session ID:', getSessionId())
     
     if (socket.value) {
       console.log('⚠️ Socket ya existe, cerrando conexión anterior...')
@@ -175,7 +223,7 @@ export const useAppStore = defineStore('app', () => {
     })
   }
 
-  // ✅ CORREGIDO: Setup completo de listeners
+  // ... (el resto del código del store se mantiene igual)
   const setupSocketListeners = () => {
     if (!socket.value) {
       console.log('❌ No hay socket para configurar listeners')
@@ -184,7 +232,6 @@ export const useAppStore = defineStore('app', () => {
 
     console.log('🔧 Configurando listeners de socket...')
 
-    // Remover todos los listeners antiguos primero
     const events = [
       'newMessage', 'userStatusUpdate', 'messagesRead', 
       'chatViewingStatus', 'taskCreated', 'taskUpdated', 
@@ -195,16 +242,13 @@ export const useAppStore = defineStore('app', () => {
       socket.value.off(event)
     })
 
-    // Configurar nuevos listeners
     socket.value.on('newMessage', (message) => {
       console.log('📨 Nuevo mensaje recibido en store:', message)
-      // Evitar duplicados
       const exists = messages.value.find(m => m.id === message.id)
       if (!exists) {
         messages.value.push(message)
         console.log('✅ Mensaje agregado al store')
         
-        // Mostrar notificación si corresponde
         if (message.receiverId === user.value?.id && document.visibilityState !== 'visible') {
           const senderName = message.senderId === 1 ? 'Administrador' : `Empleado ${message.senderId}`
           showNewMessageNotification(senderName, message.content)
@@ -240,13 +284,11 @@ export const useAppStore = defineStore('app', () => {
     
     socket.value.on('taskCreated', (task) => {
       console.log('📝 Nueva tarea recibida:', task.title)
-      // Evitar duplicados
       const exists = tasks.value.find(t => t.id === task.id)
       if (!exists) {
         tasks.value.push(task)
         console.log('✅ Tarea agregada al store')
         
-        // Notificar si la tarea es para el usuario actual
         const assignedTo = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo]
         if (assignedTo.includes(user.value?.id) && document.visibilityState !== 'visible') {
           showTaskNotification(task.title, 'Administrador')
@@ -280,7 +322,6 @@ export const useAppStore = defineStore('app', () => {
         }
         task.individualProgress[data.userId] = data.progress
         
-        // Recalcular progreso general
         const progressValues = Object.values(task.individualProgress)
         const totalProgress = progressValues.reduce((sum, p) => sum + p, 0)
         task.progress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
@@ -318,7 +359,7 @@ export const useAppStore = defineStore('app', () => {
     return await notificationService.showTaskAssignedNotification(taskTitle, assignedBy)
   }
 
-  // Task Management - ✅ CORREGIDO
+  // Task Management
   const updateIndividualProgress = async (taskId, progress) => {
     if (!user.value?.id) {
       console.log('❌ No hay usuario logueado para actualizar progreso')
@@ -334,7 +375,6 @@ export const useAppStore = defineStore('app', () => {
       
       console.log('✅ Respuesta del servidor:', response)
       
-      // Actualizar localmente inmediatamente para mejor UX
       const taskIndex = tasks.value.findIndex(t => t.id === taskId)
       if (taskIndex !== -1) {
         if (!tasks.value[taskIndex].individualProgress) {
@@ -342,7 +382,6 @@ export const useAppStore = defineStore('app', () => {
         }
         tasks.value[taskIndex].individualProgress[user.value.id] = progress
         
-        // Recalcular progreso general
         const progressValues = Object.values(tasks.value[taskIndex].individualProgress)
         const totalProgress = progressValues.reduce((sum, p) => sum + p, 0)
         tasks.value[taskIndex].progress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
@@ -350,7 +389,6 @@ export const useAppStore = defineStore('app', () => {
         console.log(`✅ Progreso actualizado localmente: ${tasks.value[taskIndex].title} - ${tasks.value[taskIndex].progress}%`)
       }
       
-      // Emitir evento para notificar a otros usuarios
       if (socket.value && socket.value.connected) {
         socket.value.emit('taskProgress', {
           taskId,
@@ -517,7 +555,7 @@ export const useAppStore = defineStore('app', () => {
     return chatViewingStatus.value[partnerId] || false
   }
 
-  // Location Management - ✅ CORREGIDO
+  // Location Management
   const updateUserLocation = (data) => {
     userLocations.value[data.userId] = data.location
   }
@@ -559,16 +597,7 @@ export const useAppStore = defineStore('app', () => {
 
   const clearData = () => {
     user.value = null
-    tasks.value = []
-    messages.value = []
-    userLocations.value = {}
-    onlineUsers.value = {}
-    chatViewingStatus.value = {}
-    initialized.value = false
-    if (socket.value) {
-      socket.value.disconnect()
-      socket.value = null
-    }
+    clearUserData()
   }
 
   const reconnectSocket = () => {

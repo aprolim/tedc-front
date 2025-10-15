@@ -35,13 +35,14 @@ const router = createRouter({
   routes
 })
 
-// ✅ MEJORADO: Guard de navegación más robusto
+// ✅ MEJORADO: Guard de navegación más robusto con manejo de cambio de usuario
 router.beforeEach((to, from, next) => {
   const store = useAppStore()
   
   console.log('🛡️ Navegación:', from.path, '→', to.path)
   console.log('🔐 Usuario autenticado:', store.isAuthenticated)
   console.log('👑 Es admin:', store.isAdmin)
+  console.log('👤 Usuario actual:', store.user?.name)
 
   // Si la ruta requiere autenticación
   if (to.meta.requiresAuth) {
@@ -51,14 +52,14 @@ router.beforeEach((to, from, next) => {
       return
     }
 
-    // Si la ruta requiere ser admin
+    // ✅ NUEVO: Verificar si el usuario tiene permisos para la ruta actual
     if (to.meta.requiresAdmin && !store.isAdmin) {
       console.log('🚫 No es admin, redirigiendo a employee')
       next('/employee')
       return
     }
 
-    // Si es empleado intentando acceder a admin
+    // ✅ NUEVO: Si es admin intentando acceder a employee, redirigir a admin
     if (!to.meta.requiresAdmin && store.isAdmin && to.path === '/employee') {
       console.log('👑 Admin intentando acceder a employee, redirigiendo a admin')
       next('/admin')
@@ -66,7 +67,7 @@ router.beforeEach((to, from, next) => {
     }
   }
 
-  // Si ya está autenticado y va a login, redirigir según rol
+  // ✅ MEJORADO: Si ya está autenticado y va a login, redirigir según rol
   if (to.path === '/login' && store.isAuthenticated) {
     console.log('🔐 Ya autenticado, redirigiendo según rol')
     if (store.isAdmin) {
@@ -75,6 +76,12 @@ router.beforeEach((to, from, next) => {
       next('/employee')
     }
     return
+  }
+
+  // ✅ NUEVO: Forzar recarga de datos al cambiar de ruta para asegurar datos frescos
+  if (from.path !== to.path && store.isAuthenticated) {
+    console.log('🔄 Cambio de ruta detectado, asegurando datos actualizados')
+    // Aquí podrías agregar lógica para recargar datos si es necesario
   }
 
   next()

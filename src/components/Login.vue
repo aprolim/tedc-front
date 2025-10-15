@@ -174,7 +174,7 @@ const validatePassword = () => {
   if (!password.value) {
     passwordErrors.value = 'La contraseña es requerida'
   } else if (password.value.length < 6) {
-    passwordErrors.value = 'La contraseña debe tener al menos 6 caracteres'
+    passwordErrors.value = 'La contrraseña debe tener al menos 6 caracteres'
   } else {
     passwordErrors.value = ''
   }
@@ -192,6 +192,7 @@ const getInitials = (name) => {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
 }
 
+// ✅ CORREGIDO: Función de login mejorada con manejo de cambio de usuario
 const handleLogin = async () => {
   // Validar formulario
   validateEmail()
@@ -203,10 +204,17 @@ const handleLogin = async () => {
 
   console.log('🔐 Enviando credenciales:', email.value)
   
+  // ✅ NUEVO: Resetear formulario después del login exitoso
   const result = await store.login(email.value, password.value)
   
   if (result.success) {
     console.log('✅ Login exitoso, redirigiendo...')
+    
+    // ✅ CORREGIDO: Resetear formulario
+    email.value = ''
+    password.value = ''
+    emailErrors.value = ''
+    passwordErrors.value = ''
     
     // Redirigir según el rol
     if (result.user.role === 'admin') {
@@ -224,8 +232,16 @@ const handleLogin = async () => {
 onMounted(() => {
   console.log('🔐 Componente Login montado')
   
+  // ✅ CORREGIDO: Resetear formulario al montar
+  email.value = ''
+  password.value = ''
+  emailErrors.value = ''
+  passwordErrors.value = ''
+  store.authError = null
+  
   // Si ya está autenticado, redirigir
   if (store.isAuthenticated) {
+    console.log('🔐 Usuario ya autenticado, redirigiendo...')
     if (store.isAdmin) {
       router.push('/admin')
     } else {
