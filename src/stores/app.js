@@ -327,7 +327,7 @@ export const useAppStore = defineStore('app', () => {
     })
     
     socket.value.on('taskUpdated', (task) => {
-      console.log('🔄 Tarea actualizada recibida:', task.title)
+      console.log('🔄 Tarea actualizada recibida:22', task)
       const index = tasks.value.findIndex(t => t.id === task.id)
       if (index !== -1) {
         tasks.value[index] = task
@@ -442,7 +442,9 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // Task Management
+  // En la función updateIndividualProgress, reemplaza el cálculo actual con:
   const updateIndividualProgress = async (taskId, progress) => {
+    console.log('777', progress)
     if (!user.value?.id) {
       console.log('❌ No hay usuario logueado para actualizar progreso')
       throw new Error('Usuario no autenticado')
@@ -465,47 +467,56 @@ export const useAppStore = defineStore('app', () => {
         }
         tasks.value[taskIndex].individualProgress[user.value.id] = progress
         
-        const progressValues = Object.values(tasks.value[taskIndex].individualProgress)
-        const totalProgress = progressValues.reduce((sum, p) => sum + p, 0)
-        const averageProgress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
-        
+        // ✅ CORREGIDO: Replicar EXACTAMENTE la misma lógica del backend
         const assignedTo = Array.isArray(tasks.value[taskIndex].assignedTo) 
           ? tasks.value[taskIndex].assignedTo.map(id => parseInt(id))
           : [parseInt(tasks.value[taskIndex].assignedTo)]
         
-        // ✅ CORREGIDO: Verificar que TODOS los asignados tengan 100%
+        const totalAssigned = assignedTo.length
+        let totalProgressSum = 0
+        let completedCount = 0
+        
+        // Calcular suma total considerando TODOS los asignados
+        assignedTo.forEach(userId => {
+          const userProgress = tasks.value[taskIndex].individualProgress[userId] || 0
+          totalProgressSum += userProgress
+          
+          if (userProgress === 100) {
+            completedCount++
+          }
+        })
+        
+        // ✅ SIEMPRE calcular el promedio entre TODOS los asignados
+        const averageProgress = Math.round(totalProgressSum / totalAssigned)
+        
+        // ✅ CORREGIDO: Solo completado si TODOS los asignados tienen 100%
         const allCompleted = assignedTo.every(userId => 
           tasks.value[taskIndex].individualProgress[userId] === 100
         )
         
-        // ✅ CORREGIDO: Contar cuántos han completado para logs informativos
-        const completedCount = assignedTo.filter(userId => 
-          tasks.value[taskIndex].individualProgress[userId] === 100
-        ).length
-        const totalAssigned = assignedTo.length
-        
-        console.log(`📊 Cálculo de progreso local:`)
-        console.log(`   - Asignados: ${assignedTo.join(', ')}`)
-        console.log(`   - Progresos individuales:`, tasks.value[taskIndex].individualProgress)
-        console.log(`   - Completados: ${completedCount}/${totalAssigned}`)
-        console.log(`   - Promedio: ${averageProgress}%`)
-        console.log(`   - Todos completados: ${allCompleted}`)
-        
+        // ✅ CORREGIDO: Determinar estado
+        let status = 'pending'
         if (allCompleted) {
-          tasks.value[taskIndex].status = 'completed'
-          tasks.value[taskIndex].progress = 100
-          console.log(`✅ Tarea COMPLETADA localmente: Todos los asignados (${completedCount}/${totalAssigned}) han terminado`)
-        } else if (averageProgress > 0 || progressValues.length > 0) {
-          tasks.value[taskIndex].status = 'in-progress'
-          tasks.value[taskIndex].progress = averageProgress
-          console.log(`🔄 Tarea EN PROGRESO localmente: ${completedCount}/${totalAssigned} completados, promedio ${averageProgress}%`)
-        } else {
-          tasks.value[taskIndex].status = 'pending'
-          tasks.value[taskIndex].progress = 0
-          console.log(`⏳ Tarea PENDIENTE localmente: Sin progreso`)
+          status = 'completed'
+        } else if (averageProgress > 0 || Object.keys(tasks.value[taskIndex].individualProgress).length > 0) {
+          status = 'in-progress'
         }
         
-        console.log(`✅ Progreso actualizado localmente: ${tasks.value[taskIndex].title} - ${tasks.value[taskIndex].progress}%`)
+        // ✅ ACTUALIZAR con valores CORRECTOS
+        tasks.value[taskIndex].progress = averageProgress
+        tasks.value[taskIndex].status = status
+        
+        console.log(`📊 Cálculo CORREGIDO local:`)
+        console.log(`   - Asignados: ${assignedTo.join(', ')}`)
+        console.log(`   - Progresos individuales:`, tasks.value[taskIndex].individualProgress)
+        console.log(`   - Suma total: ${totalProgressSum}`)
+        console.log(`   - Total asignados: ${totalAssigned}`)
+        console.log(`   - Promedio CORRECTO: ${averageProgress}%`)
+        console.log(`   - Completados: ${completedCount}/${totalAssigned}`)
+        console.log(`   - Todos completados: ${allCompleted}`)
+        console.log(`   - Estado: ${status}`)
+        
+        console.log(`✅ Progreso actualizado CORRECTAMENTE localmente: ${tasks.value[taskIndex].title} - ${tasks.value[taskIndex].progress}%`)
       }
       
       if (socket.value && socket.value.connected) {

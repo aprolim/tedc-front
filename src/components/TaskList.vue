@@ -269,7 +269,7 @@ const progressOptions = [
 // ✅ CORREGIDO: Filtrar tareas correctamente
 const filteredTasks = computed(() => {
   console.log('🔄 Recalculando filteredTasks...')
-  
+  console.log(store.tasks[store.tasks.length-1])
   if (props.isAdmin) {
     console.log('👑 Modo ADMIN - Mostrando todas las tareas:', store.tasks.length)
     return store.tasks
@@ -311,6 +311,7 @@ const filteredTasks = computed(() => {
 
 // ✅ CORREGIDO: Definir getMyProgress localmente para evitar errores en el template
 const getMyProgress = (task) => {
+  console.log("editar###>", task)
   if (props.isAdmin) {
     return task.progress || 0
   } else {
@@ -328,8 +329,9 @@ const isTaskFullyCompleted = (task) => {
 }
 
 const getCompletedCount = (task) => {
-  if (!task.individualProgress) return 0
-  return Object.values(task.individualProgress).filter(progress => progress === 100).length
+  if (!task.individualProgress || !Array.isArray(task.assignedTo)) return 0
+  const assignedTo = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo]
+  return assignedTo.filter(userId => task.individualProgress[userId] === 100).length
 }
 
 const getOtherUsersProgress = (task) => {

@@ -50,19 +50,21 @@ package.json
     "serve": "vite preview"
   },
   "dependencies": {
+    "@mdi/js": "^7.3.67",
+    "leaflet": "^1.9.4",
+    "pinia": "^2.1.6",
+    "socket.io-client": "^4.7.2",
     "vue": "^3.3.4",
     "vue-router": "^4.2.4",
-    "pinia": "^2.1.6",
-    "vuetify": "^3.3.10",
-    "socket.io-client": "^4.7.2",
-    "@mdi/js": "^7.3.67"
+    "vuetify": "^3.3.10"
   },
   "devDependencies": {
+    "@vitejs/plugin-vue": "^4.3.4",
     "vite": "^4.4.5",
-    "vite-plugin-pwa": "^0.16.4",
-    "@vitejs/plugin-vue": "^4.3.4"
+    "vite-plugin-pwa": "^0.16.4"
   }
-} 
+}
+ 
 ================================= 
 vite.config.js 
 ================================= 
@@ -244,7 +246,7 @@ define(['./workbox-ce4f0d5f'], (function (workbox) { 'use strict';
     "revision": "3ca0b8505b4bec776b69afdba2768812"
   }, {
     "url": "index.html",
-    "revision": "0.4gdj97arft"
+    "revision": "0.h2cgk3fjng8"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
@@ -5150,6 +5152,7 @@ import { useAppStore } from './stores/app.js'
 import AdminDashboard from './components/AdminDashboard.vue'
 import EmployeeDashboard from './components/EmployeeDashboard.vue'
 import Login from './components/Login.vue'
+import AdminMap from './components/AdminMap.vue' // ✅ Agregar import
 
 const routes = [
   { 
@@ -5160,6 +5163,11 @@ const routes = [
   { 
     path: '/admin', 
     component: AdminDashboard,
+    meta: { requiresAuth: true, requiresAdmin: true }
+  },
+  { 
+    path: '/admin/map',  // ✅ NUEVA RUTA DEL MAPA
+    component: AdminMap,
     meta: { requiresAuth: true, requiresAdmin: true }
   },
   { 
@@ -5182,7 +5190,7 @@ const router = createRouter({
   routes
 })
 
-// ✅ MEJORADO: Guard de navegación más robusto
+// ✅ CORREGIDO: Guard de navegación simplificado
 router.beforeEach((to, from, next) => {
   const store = useAppStore()
   
@@ -5198,24 +5206,17 @@ router.beforeEach((to, from, next) => {
       return
     }
 
-    // Si la ruta requiere ser admin
+    // Si requiere ser admin pero el usuario no es admin
     if (to.meta.requiresAdmin && !store.isAdmin) {
       console.log('🚫 No es admin, redirigiendo a employee')
       next('/employee')
       return
     }
-
-    // Si es empleado intentando acceder a admin
-    if (!to.meta.requiresAdmin && store.isAdmin && to.path === '/employee') {
-      console.log('👑 Admin intentando acceder a employee, redirigiendo a admin')
-      next('/admin')
-      return
-    }
   }
 
-  // Si ya está autenticado y va a login, redirigir según rol
+  // ✅ CORREGIDO: Si ya está autenticado y trata de ir a login, redirigir según rol
   if (to.path === '/login' && store.isAuthenticated) {
-    console.log('🔐 Ya autenticado, redirigiendo según rol')
+    console.log('🔐 Ya autenticado, redirigiendo según rol desde login')
     if (store.isAdmin) {
       next('/admin')
     } else {
@@ -5224,6 +5225,8 @@ router.beforeEach((to, from, next) => {
     return
   }
 
+  // ✅ NUEVO: Permitir navegación normal si pasa todas las validaciones
+  console.log('✅ Navegación permitida a:', to.path)
   next()
 })
 
@@ -5235,28 +5238,195 @@ src\components\AdminDashboard.vue
 <template>
   <div v-if="store.isAuthenticated && store.isAdmin">
     <v-container fluid>
-      <v-row>
-        <v-col cols="12" md="8">
+      <!-- Header con estadísticas y controles -->
+      <v-row class="mb-4">
+        <v-col cols="12">
           <v-card>
-            <v-card-title>Gestión de Tareas</v-card-title>
+            <v-card-title class="d-flex align-center">
+              <v-avatar color="primary" size="40" class="mr-3">
+                <v-icon color="white">mdi-shield-account</v-icon>
+              </v-avatar>
+              Panel de Administración
+              <v-spacer></v-spacer>
+              
+              <!-- Botones de acción -->
+              <v-btn 
+                color="primary" 
+                @click="refreshAllData"
+                :loading="refreshing"
+                class="mr-2"
+              >
+                <v-icon left>mdi-refresh</v-icon>
+                Actualizar Datos
+              </v-btn>
+              
+              <v-btn 
+                color="green" 
+                @click="$router.push('/admin/map')" 
+                class="mr-2"
+              >
+                <v-icon left>mdi-map</v-icon>
+                Ver Mapa
+              </v-btn>
+            </v-card-title>
+            
+            <v-card-text>
+              <!-- Estadísticas rápidas -->
+              <v-row class="text-center">
+                <v-col cols="6" md="3">
+                  <div class="stat-card">
+                    <v-icon color="blue" size="40" class="mb-2">mdi-account-group</v-icon>
+                    <div class="stat-number">{{ store.onlineEmployeesCount }}</div>
+                    <div class="stat-label">Empleados Conectados</div>
+                  </div>
+                </v-col>
+                
+                <v-col cols="6" md="3">
+                  <div class="stat-card">
+                    <v-icon color="orange" size="40" class="mb-2">mdi-format-list-checks</v-icon>
+                    <div class="stat-number">{{ totalTasks }}</div>
+                    <div class="stat-label">Total Tareas</div>
+                  </div>
+                </v-col>
+                
+                <v-col cols="6" md="3">
+                  <div class="stat-card">
+                    <v-icon color="green" size="40" class="mb-2">mdi-check-circle</v-icon>
+                    <div class="stat-number">{{ completedTasks }}</div>
+                    <div class="stat-label">Tareas Completadas</div>
+                  </div>
+                </v-col>
+                
+                <v-col cols="6" md="3">
+                  <div class="stat-card">
+                    <v-icon color="red" size="40" class="mb-2">mdi-message</v-icon>
+                    <div class="stat-number">{{ store.totalUnreadCount }}</div>
+                    <div class="stat-label">Mensajes Sin Leer</div>
+                  </div>
+                </v-col>
+              </v-row>
+            </v-card-text>
+          </v-card>
+        </v-col>
+      </v-row>
+
+      <!-- Contenido principal -->
+      <v-row>
+        <!-- Columna izquierda - Tareas -->
+        <v-col cols="12" md="8">
+          <v-card class="h-100">
+            <v-card-title class="d-flex align-center">
+              <v-icon color="primary" class="mr-2">mdi-format-list-checks</v-icon>
+              Gestión de Tareas
+              <v-spacer></v-spacer>
+              <v-chip :color="getTasksStatusColor()" variant="flat">
+                {{ getTasksStatusText() }}
+              </v-chip>
+            </v-card-title>
             <v-card-text>
               <TaskList :is-admin="true" />
             </v-card-text>
           </v-card>
         </v-col>
         
+        <!-- Columna derecha - Chat y Ubicaciones -->
         <v-col cols="12" md="4">
-          <v-card>
-            <v-card-title>Chat con Empleados</v-card-title>
+          <!-- Chat -->
+          <v-card class="mb-4">
+            <v-card-title class="d-flex align-center">
+              <v-icon color="primary" class="mr-2">mdi-forum</v-icon>
+              Chat con Empleados
+              <v-spacer></v-spacer>
+              <v-badge 
+                :content="store.totalUnreadCount" 
+                color="red" 
+                v-if="store.totalUnreadCount > 0"
+              >
+                <v-icon color="grey">mdi-message</v-icon>
+              </v-badge>
+            </v-card-title>
             <v-card-text>
               <Chat :is-admin="true" />
             </v-card-text>
           </v-card>
           
-          <v-card class="mt-4">
-            <v-card-title>Ubicaciones</v-card-title>
+          <!-- Ubicaciones -->
+          <v-card class="mb-4">
+            <v-card-title class="d-flex align-center">
+              <v-icon color="primary" class="mr-2">mdi-map-marker</v-icon>
+              Ubicaciones en Tiempo Real
+              <v-spacer></v-spacer>
+              <v-chip 
+                :color="Object.keys(store.userLocations).length > 0 ? 'green' : 'grey'" 
+                size="small"
+              >
+                {{ Object.keys(store.userLocations).length }} en línea
+              </v-chip>
+            </v-card-title>
             <v-card-text>
               <UserLocation :is-admin="true" />
+            </v-card-text>
+          </v-card>
+
+          <!-- Información del sistema -->
+          <v-card>
+            <v-card-title class="d-flex align-center">
+              <v-icon color="primary" class="mr-2">mdi-information</v-icon>
+              Estado del Sistema
+            </v-card-title>
+            <v-card-text>
+              <v-list density="compact">
+                <v-list-item>
+                  <template v-slot:prepend>
+                    <v-avatar :color="store.isSocketConnected ? 'green' : 'red'" size="32">
+                      <v-icon color="white" size="small">
+                        {{ store.isSocketConnected ? 'mdi-link' : 'mdi-link-off' }}
+                      </v-icon>
+                    </v-avatar>
+                  </template>
+                  <v-list-item-title>Conexión en Tiempo Real</v-list-item-title>
+                  <v-list-item-subtitle>
+                    {{ store.isSocketConnected ? 'Conectado' : 'Desconectado' }}
+                  </v-list-item-subtitle>
+                </v-list-item>
+
+                <v-list-item>
+                  <template v-slot:prepend>
+                    <v-avatar :color="canNotify ? 'green' : 'orange'" size="32">
+                      <v-icon color="white" size="small">mdi-bell</v-icon>
+                    </v-avatar>
+                  </template>
+                  <v-list-item-title>Notificaciones</v-list-item-title>
+                  <v-list-item-subtitle>
+                    {{ canNotify ? 'Activadas' : 'Permiso requerido' }}
+                  </v-list-item-subtitle>
+                </v-list-item>
+
+                <v-list-item>
+                  <template v-slot:prepend>
+                    <v-avatar color="blue" size="32">
+                      <v-icon color="white" size="small">mdi-clock</v-icon>
+                    </v-avatar>
+                  </template>
+                  <v-list-item-title>Última actualización</v-list-item-title>
+                  <v-list-item-subtitle>
+                    {{ lastUpdateTime }}
+                  </v-list-item-subtitle>
+                </v-list-item>
+              </v-list>
+              
+              <!-- Botón para solicitar permisos de notificación -->
+              <v-btn 
+                v-if="!canNotify" 
+                @click="requestNotificationPermission" 
+                color="orange" 
+                block 
+                size="small"
+                class="mt-3"
+              >
+                <v-icon left>mdi-bell</v-icon>
+                Activar Notificaciones
+              </v-btn>
             </v-card-text>
           </v-card>
         </v-col>
@@ -5264,13 +5434,20 @@ src\components\AdminDashboard.vue
     </v-container>
   </div>
   
-  <!-- ✅ CORREGIDO: Redirigir si no está autenticado o no es admin -->
+  <!-- Estado de carga o redirección -->
   <div v-else class="fill-height d-flex align-center justify-center">
-    <v-progress-circular
-      indeterminate
-      color="primary"
-      size="64"
-    ></v-progress-circular>
+    <v-card class="text-center pa-6" width="400">
+      <v-progress-circular
+        indeterminate
+        color="primary"
+        size="64"
+        class="mb-4"
+      ></v-progress-circular>
+      <div class="text-h6 mb-2">Verificando acceso...</div>
+      <div class="text-body-2 text-grey">
+        {{ getLoadingMessage() }}
+      </div>
+    </v-card>
   </div>
 </template>
 
@@ -5280,24 +5457,89 @@ import { useRouter } from 'vue-router'
 import TaskList from './TaskList.vue'
 import Chat from './Chat.vue'
 import UserLocation from './UserLocation.vue'
+import { ref, computed, onMounted, watch } from 'vue'
 
 const store = useAppStore()
 const router = useRouter()
 
-// ✅ CORREGIDO: Verificar autenticación y rol
-import { onMounted, watch } from 'vue'
+// Estados reactivos
+const refreshing = ref(false)
+const lastUpdateTime = ref(new Date().toLocaleTimeString('es-ES'))
 
+// Computed properties
+const totalTasks = computed(() => store.tasks.length)
+
+const completedTasks = computed(() => {
+  return store.tasks.filter(task => task.status === 'completed').length
+})
+
+const canNotify = computed(() => store.canNotify)
+
+// Métodos
+const refreshAllData = async () => {
+  refreshing.value = true
+  console.log('🔄 Actualizando todos los datos...')
+  
+  try {
+    // Simular actualización de datos
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    lastUpdateTime.value = new Date().toLocaleTimeString('es-ES')
+    console.log('✅ Datos actualizados correctamente')
+  } catch (error) {
+    console.error('❌ Error actualizando datos:', error)
+  } finally {
+    refreshing.value = false
+  }
+}
+
+const requestNotificationPermission = async () => {
+  const granted = await store.requestNotificationPermission()
+  if (granted) {
+    console.log('✅ Permiso de notificaciones concedido')
+  } else {
+    console.log('❌ Permiso de notificaciones denegado')
+  }
+}
+
+const getTasksStatusColor = () => {
+  const completionRate = totalTasks.value > 0 ? (completedTasks.value / totalTasks.value) * 100 : 0
+  
+  if (completionRate === 0) return 'grey'
+  if (completionRate < 50) return 'orange'
+  if (completionRate < 100) return 'blue'
+  return 'green'
+}
+
+const getTasksStatusText = () => {
+  const completionRate = totalTasks.value > 0 ? (completedTasks.value / totalTasks.value) * 100 : 0
+  return `${Math.round(completionRate)}% completado`
+}
+
+const getLoadingMessage = () => {
+  if (!store.isAuthenticated) {
+    return 'Redirigiendo al login...'
+  } else if (!store.isAdmin) {
+    return 'Redirigiendo al panel de empleado...'
+  }
+  return 'Cargando panel de administración...'
+}
+
+// ✅ CORREGIDO: Verificar autenticación y rol
 onMounted(() => {
+  console.log('👑 AdminDashboard montado - Verificando acceso...')
+  
   if (!store.isAuthenticated) {
     console.log('🚫 No autenticado, redirigiendo a login')
     router.push('/login')
   } else if (!store.isAdmin) {
     console.log('🚫 No es admin, redirigiendo a employee')
     router.push('/employee')
+  } else {
+    console.log('✅ Acceso autorizado - Mostrando panel admin')
   }
 })
 
-// Watcher para cambios en autenticación
+// Watchers para cambios en autenticación
 watch(() => store.isAuthenticated, (isAuthenticated) => {
   if (!isAuthenticated) {
     console.log('🔐 Cambio en autenticación, redirigiendo a login')
@@ -5311,11 +5553,708 @@ watch(() => store.isAdmin, (isAdmin) => {
     router.push('/employee')
   }
 })
+
+// Configurar auto-actualización cada 30 segundos
+let autoRefreshInterval = null
+onMounted(() => {
+  autoRefreshInterval = setInterval(() => {
+    if (store.isAuthenticated && store.isAdmin) {
+      console.log('🔄 Auto-actualización de datos')
+      lastUpdateTime.value = new Date().toLocaleTimeString('es-ES')
+    }
+  }, 30000)
+})
+
+// Limpiar intervalo al desmontar
+import { onUnmounted } from 'vue'
+onUnmounted(() => {
+  if (autoRefreshInterval) {
+    clearInterval(autoRefreshInterval)
+  }
+})
 </script>
 
 <style scoped>
 .fill-height {
   min-height: 50vh;
+}
+
+.h-100 {
+  height: 100%;
+}
+
+/* Estilos para las tarjetas de estadísticas */
+.stat-card {
+  padding: 16px;
+  border-radius: 8px;
+  background: #f8f9fa;
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  background: #e9ecef;
+  transform: translateY(-2px);
+}
+
+.stat-number {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #1976d2;
+  margin-bottom: 4px;
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+/* Efectos hover para las tarjetas principales */
+.v-card {
+  transition: all 0.3s ease;
+  border: 1px solid transparent;
+}
+
+.v-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #e0e0e0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 960px) {
+  .stat-number {
+    font-size: 1.25rem;
+  }
+  
+  .stat-card {
+    padding: 12px;
+  }
+}
+</style> 
+================================= 
+src\components\AdminMap.vue 
+================================= 
+ 
+<template>
+  <div v-if="store.isAuthenticated && store.isAdmin" class="admin-map-container">
+    <v-container fluid>
+      <!-- Header -->
+      <v-card class="mb-4">
+        <v-card-title class="d-flex align-center">
+          <v-icon color="primary" class="mr-2">mdi-map-marker</v-icon>
+          Mapa de Ubicaciones del Equipo
+          <v-spacer></v-spacer>
+          <v-btn @click="refreshLocations" color="primary" class="mr-2">
+            <v-icon left>mdi-refresh</v-icon>
+            Actualizar
+          </v-btn>
+          <v-btn @click="centerMapOnAllUsers" color="green" class="mr-2" :disabled="!mapReady || employeesWithLocations.length === 0">
+            <v-icon left>mdi-target</v-icon>
+            Centrar Mapa
+          </v-btn>
+          <v-btn @click="$router.push('/admin')" variant="text">
+            <v-icon left>mdi-arrow-left</v-icon>
+            Volver al Dashboard
+          </v-btn>
+        </v-card-title>
+        <v-card-text>
+          <div class="d-flex align-center flex-wrap">
+            <v-chip color="green" class="mr-2 mb-2">
+              <v-icon start>mdi-account-multiple</v-icon>
+              {{ employeesWithLocations.length }} empleados con ubicación
+            </v-chip>
+            <v-chip :color="mapReady ? 'blue' : 'orange'" class="mr-2 mb-2">
+              <v-icon start>mdi-map</v-icon>
+              {{ mapReady ? 'Mapa listo' : 'Cargando mapa...' }}
+            </v-chip>
+            <v-chip v-if="mapError" color="red" class="mr-2 mb-2">
+              <v-icon start>mdi-alert</v-icon>
+              Modo estático
+            </v-chip>
+          </div>
+        </v-card-text>
+      </v-card>
+
+      <!-- Mapa y controles -->
+      <v-row>
+        <!-- Mapa -->
+        <v-col cols="12" md="9">
+          <v-card>
+            <v-card-title>
+              <v-icon left>mdi-map</v-icon>
+              Mapa de Ubicaciones
+              <v-spacer></v-spacer>
+              <span class="text-caption text-grey">
+                Zoom: {{ mapZoom }}x
+              </span>
+            </v-card-title>
+            <v-card-text class="pa-0">
+              <div 
+                ref="mapContainer" 
+                class="map-container"
+                :style="{ height: mapHeight + 'px' }"
+              >
+                <div v-if="!mapReady" class="map-loading">
+                  <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
+                  <div class="mt-4">Cargando mapa...</div>
+                </div>
+                
+                <!-- Mapa estático como fallback -->
+                <div v-if="mapError && mapReady" class="static-map-fallback">
+                  <v-icon size="64" color="grey-lighten-1" class="mb-4">mdi-map</v-icon>
+                  <div class="text-h6 mb-2">Mapa en Modo Estático</div>
+                  <div class="text-body-1 text-grey mb-4">
+                    Mostrando ubicaciones en lista debido a problemas de carga
+                  </div>
+                  
+                  <!-- Lista de ubicaciones en modo estático -->
+                  <v-card variant="outlined" class="mx-auto" max-width="600">
+                    <v-card-title>
+                      <v-icon color="primary" class="mr-2">mdi-map-marker</v-icon>
+                      Ubicaciones de Empleados
+                    </v-card-title>
+                    <v-card-text>
+                      <v-list>
+                        <v-list-item
+                          v-for="employee in employeesWithLocations"
+                          :key="employee.id"
+                          class="mb-3"
+                        >
+                          <template v-slot:prepend>
+                            <v-avatar :color="getEmployeeColor(employee.id)" size="48">
+                              <span class="text-white">{{ getInitials(employee.name) }}</span>
+                            </v-avatar>
+                          </template>
+                          
+                          <v-list-item-title class="font-weight-medium">
+                            {{ employee.name }}
+                            <v-chip size="small" :color="store.isUserOnline(employee.id) ? 'green' : 'red'" class="ml-2">
+                              {{ store.isUserOnline(employee.id) ? 'En línea' : 'Desconectado' }}
+                            </v-chip>
+                          </v-list-item-title>
+                          
+                          <v-list-item-subtitle>
+                            <div class="d-flex align-center mt-1">
+                              <v-icon color="primary" size="small" class="mr-1">mdi-map-marker</v-icon>
+                              <span>Lat: {{ employee.location.latitude.toFixed(6) }}</span>
+                              <span class="mx-2">•</span>
+                              <span>Lng: {{ employee.location.longitude.toFixed(6) }}</span>
+                            </div>
+                            <div class="text-caption text-grey mt-1">
+                              <v-icon size="small" class="mr-1">mdi-clock</v-icon>
+                              Actualizado: {{ formatTime(employee.location.lastUpdate) }}
+                            </div>
+                          </v-list-item-subtitle>
+                        </v-list-item>
+
+                        <v-list-item v-if="employeesWithLocations.length === 0">
+                          <v-list-item-title class="text-center text-grey">
+                            No hay ubicaciones disponibles
+                          </v-list-item-title>
+                        </v-list-item>
+                      </v-list>
+                    </v-card-text>
+                  </v-card>
+                </div>
+              </div>
+            </v-card-text>
+          </v-card>
+        </v-col>
+
+        <!-- Controles y lista -->
+        <v-col cols="12" md="3">
+          <!-- Controles del mapa -->
+          <v-card class="mb-4">
+            <v-card-title>
+              <v-icon left>mdi-cog</v-icon>
+              Controles
+            </v-card-title>
+            <v-card-text>
+              <v-btn 
+                @click="centerMapOnAllUsers" 
+                color="primary" 
+                block 
+                class="mb-3"
+                :disabled="!mapReady || employeesWithLocations.length === 0 || mapError"
+              >
+                <v-icon left>mdi-target</v-icon>
+                Centrar en Todos
+              </v-btn>
+
+              <v-slider
+                v-model="mapZoom"
+                label="Zoom del Mapa"
+                min="10"
+                max="18"
+                step="1"
+                thumb-label
+                @update:model-value="updateMapZoom"
+                :disabled="mapError"
+                class="mb-4"
+              ></v-slider>
+
+              <v-switch
+                v-model="showUserNames"
+                label="Mostrar nombres"
+                color="primary"
+                class="mb-2"
+                :disabled="mapError"
+              ></v-switch>
+
+              <div v-if="mapError" class="error-warning">
+                <v-alert type="warning" variant="tonal" density="compact" class="mt-2">
+                  <div class="text-caption">
+                    El mapa interactivo no está disponible. Usando modo estático.
+                  </div>
+                </v-alert>
+              </div>
+
+              <div class="text-caption text-grey mt-3">
+                {{ mapError ? 'Ubicaciones mostradas en lista' : 'Haz clic en los marcadores para ver detalles' }}
+              </div>
+            </v-card-text>
+          </v-card>
+
+          <!-- Lista de empleados -->
+          <v-card>
+            <v-card-title>
+              <v-icon left>mdi-account-group</v-icon>
+              Empleados ({{ employeesWithLocations.length }})
+            </v-card-title>
+            <v-card-text class="pa-0" style="max-height: 400px; overflow-y: auto;">
+              <v-list density="compact">
+                <v-list-item
+                  v-for="employee in employeesWithLocations"
+                  :key="employee.id"
+                  @click="focusOnEmployee(employee)"
+                  :class="{ 'selected-employee': selectedEmployee?.id === employee.id }"
+                  class="employee-map-item"
+                >
+                  <template v-slot:prepend>
+                    <v-avatar :color="getEmployeeColor(employee.id)" size="36">
+                      <span class="text-white">{{ getInitials(employee.name) }}</span>
+                    </v-avatar>
+                  </template>
+
+                  <v-list-item-title class="font-weight-medium text-body-2">
+                    {{ employee.name }}
+                  </v-list-item-title>
+
+                  <v-list-item-subtitle class="text-caption">
+                    <v-icon 
+                      :color="store.isUserOnline(employee.id) ? 'green' : 'red'" 
+                      size="12"
+                      class="mr-1"
+                    >
+                      mdi-circle
+                    </v-icon>
+                    {{ store.isUserOnline(employee.id) ? 'En línea' : 'Desconectado' }}
+                  </v-list-item-subtitle>
+
+                  <template v-slot:append>
+                    <v-icon color="primary" size="small">mdi-chevron-right</v-icon>
+                  </template>
+                </v-list-item>
+
+                <v-list-item v-if="employeesWithLocations.length === 0">
+                  <v-list-item-title class="text-center text-grey text-caption">
+                    <v-icon size="32" color="grey-lighten-1" class="mb-2">mdi-map-marker-off</v-icon>
+                    <div>No hay ubicaciones disponibles</div>
+                  </v-list-item-title>
+                </v-list-item>
+              </v-list>
+            </v-card-text>
+          </v-card>
+        </v-col>
+      </v-row>
+    </v-container>
+
+    <!-- Dialog de información del empleado -->
+    <v-dialog v-model="showEmployeeDialog" max-width="400">
+      <v-card v-if="selectedEmployee">
+        <v-card-title class="d-flex align-center">
+          <v-avatar :color="getEmployeeColor(selectedEmployee.id)" size="40" class="mr-3">
+            <span class="text-white">{{ getInitials(selectedEmployee.name) }}</span>
+          </v-avatar>
+          {{ selectedEmployee.name }}
+        </v-card-title>
+        
+        <v-card-text>
+          <v-list density="compact">
+            <v-list-item>
+              <template v-slot:prepend>
+                <v-icon color="grey">mdi-map-marker</v-icon>
+              </template>
+              <v-list-item-title>Coordenadas</v-list-item-title>
+              <v-list-item-subtitle>
+                {{ selectedEmployee.location.latitude.toFixed(6) }}, 
+                {{ selectedEmployee.location.longitude.toFixed(6) }}
+              </v-list-item-subtitle>
+            </v-list-item>
+
+            <v-list-item>
+              <template v-slot:prepend>
+                <v-icon color="grey">mdi-clock</v-icon>
+              </template>
+              <v-list-item-title>Última actualización</v-list-item-title>
+              <v-list-item-subtitle>
+                {{ formatTime(selectedEmployee.location.lastUpdate) }}
+              </v-list-item-subtitle>
+            </v-list-item>
+
+            <v-list-item>
+              <template v-slot:prepend>
+                <v-icon :color="store.isUserOnline(selectedEmployee.id) ? 'green' : 'red'">mdi-circle</v-icon>
+              </template>
+              <v-list-item-title>Estado</v-list-item-title>
+              <v-list-item-subtitle>
+                {{ store.isUserOnline(selectedEmployee.id) ? 'En línea' : 'Desconectado' }}
+              </v-list-item-subtitle>
+            </v-list-item>
+
+            <v-list-item>
+              <template v-slot:prepend>
+                <v-icon color="grey">mdi-office-building</v-icon>
+              </template>
+              <v-list-item-title>Departamento</v-list-item-title>
+              <v-list-item-subtitle>
+                {{ selectedEmployee.department }}
+              </v-list-item-subtitle>
+            </v-list-item>
+          </v-list>
+        </v-card-text>
+
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn @click="showEmployeeDialog = false" variant="text">Cerrar</v-btn>
+          <v-btn 
+            @click="centerMapOnEmployee(selectedEmployee)" 
+            color="primary"
+            :disabled="mapError"
+          >
+            <v-icon left>mdi-target</v-icon>
+            {{ mapError ? 'Mapa no disponible' : 'Centrar en Mapa' }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useAppStore } from '../stores/app.js'
+import { useRouter } from 'vue-router'
+
+// ✅ DECLARAR STORE Y ROUTER PRIMERO
+const store = useAppStore()
+const router = useRouter()
+
+// Estados reactivos
+const mapContainer = ref(null)
+const map = ref(null)
+const mapReady = ref(false)
+const mapError = ref(false)
+const selectedEmployee = ref(null)
+const showEmployeeDialog = ref(false)
+const mapZoom = ref(13)
+const showUserNames = ref(true)
+
+// Variables para Leaflet (si está disponible)
+let L = null
+let markers = []
+let markerLayer = null
+
+// Computed - ✅ MOVER DESPUÉS DE DECLARAR STORE
+const employeesWithLocations = computed(() => {
+  const employees = []
+  
+  for (const [userId, location] of Object.entries(store.userLocations)) {
+    const user = getEmployeeById(parseInt(userId))
+    if (user) {
+      employees.push({
+        ...user,
+        location
+      })
+    }
+  }
+  
+  return employees.sort((a, b) => a.name.localeCompare(b.name))
+})
+
+const mapHeight = computed(() => {
+  return Math.max(500, window.innerHeight - 200)
+})
+
+// Métodos
+const getEmployeeById = (id) => {
+  const employees = {
+    1: { id: 1, name: 'Administrador', department: 'Administración' },
+    2: { id: 2, name: 'Juan Pérez', department: 'Ventas' },
+    3: { id: 3, name: 'María García', department: 'Marketing' },
+    4: { id: 4, name: 'Carlos López', department: 'IT' }
+  }
+  return employees[id]
+}
+
+const getInitials = (name) => {
+  if (!name) return '?'
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+}
+
+const formatTime = (timestamp) => {
+  return new Date(timestamp).toLocaleTimeString('es-ES', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+const getEmployeeColor = (userId) => {
+  const colors = ['primary', 'green', 'orange', 'red', 'purple', 'teal', 'pink', 'blue']
+  return colors[userId % colors.length]
+}
+
+const focusOnEmployee = (employee) => {
+  selectedEmployee.value = employee
+  showEmployeeDialog.value = true
+  console.log('👤 Empleado seleccionado:', employee.name)
+}
+
+// Funciones del mapa
+const initMap = async () => {
+  if (!mapContainer.value) return
+
+  console.log('🗺️ Intentando inicializar mapa interactivo...')
+
+  try {
+    // Intentar cargar Leaflet dinámicamente
+    const leafletModule = await import('leaflet')
+    L = leafletModule.default
+    
+    // Configurar iconos de Leaflet
+    delete L.Icon.Default.prototype._getIconUrl
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+      iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    })
+
+    // Crear mapa
+    map.value = L.map(mapContainer.value).setView([19.4326, -99.1332], mapZoom.value)
+
+    // Agregar capa de tiles con manejo de errores
+    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 18
+    }).addTo(map.value)
+
+    // Manejar errores de tiles
+    tileLayer.on('tileerror', (error) => {
+      console.log('⚠️ Error cargando tile del mapa:', error)
+    })
+
+    // Configurar eventos
+    map.value.on('zoomend', () => {
+      if (map.value) {
+        mapZoom.value = map.value.getZoom()
+      }
+    })
+
+    mapReady.value = true
+    console.log('✅ Mapa interactivo inicializado correctamente')
+
+    // Agregar marcadores
+    nextTick(() => {
+      updateMarkers()
+    })
+
+  } catch (error) {
+    console.error('❌ Error cargando mapa interactivo:', error)
+    initStaticMap()
+  }
+}
+
+const initStaticMap = () => {
+  console.log('🗺️ Inicializando mapa estático como fallback')
+  mapReady.value = true
+  mapError.value = true
+}
+
+const updateMarkers = () => {
+  if (!map.value || !L || mapError.value) return
+
+  try {
+    // Limpiar marcadores anteriores
+    if (markerLayer) {
+      map.value.removeLayer(markerLayer)
+    }
+
+    markerLayer = L.layerGroup().addTo(map.value)
+    markers = []
+
+    employeesWithLocations.value.forEach(employee => {
+      const { latitude, longitude } = employee.location
+      
+      const marker = L.marker([latitude, longitude])
+        .addTo(markerLayer)
+        .bindPopup(`
+          <div style="min-width: 200px;">
+            <strong>${employee.name}</strong><br/>
+            <small>${employee.department}</small><br/>
+            <hr style="margin: 8px 0;">
+            📍 ${latitude.toFixed(6)}, ${longitude.toFixed(6)}<br/>
+            ⏰ ${formatTime(employee.location.lastUpdate)}<br/>
+            ${store.isUserOnline(employee.id) ? '🟢 En línea' : '🔴 Desconectado'}
+          </div>
+        `)
+      
+      marker.on('click', () => {
+        selectedEmployee.value = employee
+        showEmployeeDialog.value = true
+      })
+
+      markers.push(marker)
+    })
+
+    console.log(`📍 ${employeesWithLocations.value.length} marcadores agregados al mapa`)
+    
+    // Centrar el mapa si hay marcadores
+    if (markers.length > 0) {
+      centerMapOnAllUsers()
+    }
+
+  } catch (error) {
+    console.error('❌ Error actualizando marcadores:', error)
+  }
+}
+
+const centerMapOnAllUsers = () => {
+  if (!map.value || markers.length === 0 || mapError.value) return
+
+  try {
+    const group = L.featureGroup(markers)
+    map.value.fitBounds(group.getBounds().pad(0.1), { 
+      maxZoom: 15,
+      animate: true
+    })
+    console.log('🎯 Mapa centrado en todos los usuarios')
+  } catch (error) {
+    console.error('❌ Error centrando mapa:', error)
+  }
+}
+
+const centerMapOnEmployee = (employee) => {
+  if (!map.value || mapError.value) return
+
+  try {
+    const { latitude, longitude } = employee.location
+    map.value.setView([latitude, longitude], 16, { animate: true })
+    console.log(`🎯 Mapa centrado en: ${employee.name}`)
+  } catch (error) {
+    console.error('❌ Error centrando en empleado:', error)
+  }
+}
+
+const updateMapZoom = (zoom) => {
+  if (map.value && !mapError.value) {
+    map.value.setZoom(zoom)
+  }
+}
+
+const refreshLocations = () => {
+  console.log('🔄 Actualizando ubicaciones...')
+  if (!mapError.value) {
+    updateMarkers()
+  }
+}
+
+// Lifecycle
+onMounted(() => {
+  console.log('🗺️ Componente AdminMap montado')
+  
+  // Inicializar mapa después de un pequeño delay
+  setTimeout(() => {
+    initMap()
+  }, 100)
+})
+
+onUnmounted(() => {
+  if (map.value && !mapError.value) {
+    map.value.remove()
+  }
+})
+
+// Watchers
+watch(employeesWithLocations, () => {
+  if (mapReady.value && !mapError.value) {
+    updateMarkers()
+  }
+})
+</script>
+
+<style scoped>
+.admin-map-container {
+  min-height: 100vh;
+}
+
+.map-container {
+  position: relative;
+  background: #f5f5f5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.map-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #666;
+  background: #fafafa;
+}
+
+.static-map-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+  text-align: center;
+  background: #fafafa;
+}
+
+.employee-map-item {
+  border-left: 4px solid transparent;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  padding: 8px 16px;
+}
+
+.employee-map-item:hover {
+  background-color: rgba(25, 118, 210, 0.04);
+  border-left-color: #1976d2;
+}
+
+.employee-map-item.selected-employee {
+  background-color: rgba(25, 118, 210, 0.08);
+  border-left-color: #1976d2;
+}
+
+.error-warning {
+  margin-top: 8px;
+}
+
+/* Estilos para Leaflet cuando está disponible */
+:deep(.leaflet-popup-content) {
+  margin: 8px 12px;
+  font-family: 'Roboto', sans-serif;
+}
+
+:deep(.leaflet-popup-content-wrapper) {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 </style> 
 ================================= 
@@ -6084,11 +7023,11 @@ const setupStatusListeners = () => {
 const setupViewingStatusListeners = () => {
   if (store.socket) {
     store.socket.on('chatViewingStatus', (data) => {
-      console.log('👀 Estado de visualización recibido:', data)
+      // console.log('👀 Estado de visualización recibido:', data)
       
       if (data.userId === chatPartnerId.value) {
         isPartnerViewingChat.value = data.isViewing
-        console.log(`🔄 Partner ${data.userId} ${data.isViewing ? 'está viendo' : 'dejó de ver'} el chat`)
+        // console.log(`🔄 Partner ${data.userId} ${data.isViewing ? 'está viendo' : 'dejó de ver'} el chat`)
         
         if (!data.isViewing) {
           clearTimeout(partnerViewingTimeout.value)
@@ -6987,7 +7926,7 @@ const validatePassword = () => {
   if (!password.value) {
     passwordErrors.value = 'La contraseña es requerida'
   } else if (password.value.length < 6) {
-    passwordErrors.value = 'La contraseña debe tener al menos 6 caracteres'
+    passwordErrors.value = 'La contrraseña debe tener al menos 6 caracteres'
   } else {
     passwordErrors.value = ''
   }
@@ -7005,6 +7944,7 @@ const getInitials = (name) => {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
 }
 
+// ✅ CORREGIDO: Función de login mejorada con manejo de cambio de usuario
 const handleLogin = async () => {
   // Validar formulario
   validateEmail()
@@ -7016,10 +7956,17 @@ const handleLogin = async () => {
 
   console.log('🔐 Enviando credenciales:', email.value)
   
+  // ✅ NUEVO: Resetear formulario después del login exitoso
   const result = await store.login(email.value, password.value)
   
   if (result.success) {
     console.log('✅ Login exitoso, redirigiendo...')
+    
+    // ✅ CORREGIDO: Resetear formulario
+    email.value = ''
+    password.value = ''
+    emailErrors.value = ''
+    passwordErrors.value = ''
     
     // Redirigir según el rol
     if (result.user.role === 'admin') {
@@ -7037,8 +7984,16 @@ const handleLogin = async () => {
 onMounted(() => {
   console.log('🔐 Componente Login montado')
   
+  // ✅ CORREGIDO: Resetear formulario al montar
+  email.value = ''
+  password.value = ''
+  emailErrors.value = ''
+  passwordErrors.value = ''
+  store.authError = null
+  
   // Si ya está autenticado, redirigir
   if (store.isAuthenticated) {
+    console.log('🔐 Usuario ya autenticado, redirigiendo...')
     if (store.isAdmin) {
       router.push('/admin')
     } else {
@@ -7334,7 +8289,7 @@ src\components\TaskList.vue
         <v-card-actions>
           <v-spacer></v-spacer>
           <v-btn @click="showDialog = false" variant="text">Cancelar</v-btn>
-          <v-btn color="primary" @click="createTask" :disabled="!newTask.title || newTask.assignedTo.length === 0">
+          <v-btn color="primary" @click="createTask" :disabled="!newTask.title || newTask.assignedTo.length === 0" :loading="creatingTask">
             Crear Tarea
           </v-btn>
         </v-card-actions>
@@ -7358,6 +8313,7 @@ const newTask = ref({
   assignedTo: [],
   dueDate: ''
 })
+const creatingTask = ref(false) // ✅ NUEVO: Estado para controlar loading
 
 const progressOptions = [
   { value: 0, label: '0% - Reiniciar' },
@@ -7370,7 +8326,7 @@ const progressOptions = [
 // ✅ CORREGIDO: Filtrar tareas correctamente
 const filteredTasks = computed(() => {
   console.log('🔄 Recalculando filteredTasks...')
-  
+  console.log(store.tasks[store.tasks.length-1])
   if (props.isAdmin) {
     console.log('👑 Modo ADMIN - Mostrando todas las tareas:', store.tasks.length)
     return store.tasks
@@ -7412,6 +8368,7 @@ const filteredTasks = computed(() => {
 
 // ✅ CORREGIDO: Definir getMyProgress localmente para evitar errores en el template
 const getMyProgress = (task) => {
+  console.log("editar###>", task)
   if (props.isAdmin) {
     return task.progress || 0
   } else {
@@ -7429,8 +8386,9 @@ const isTaskFullyCompleted = (task) => {
 }
 
 const getCompletedCount = (task) => {
-  if (!task.individualProgress) return 0
-  return Object.values(task.individualProgress).filter(progress => progress === 100).length
+  if (!task.individualProgress || !Array.isArray(task.assignedTo)) return 0
+  const assignedTo = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo]
+  return assignedTo.filter(userId => task.individualProgress[userId] === 100).length
 }
 
 const getOtherUsersProgress = (task) => {
@@ -7487,10 +8445,11 @@ onMounted(async () => {
       }
     })
     
-    store.socket.on('taskCreated', (task) => {
-      console.log('📝 Nueva tarea creada:', task.title)
-      store.tasks.push(task)
-    })
+    // ❌ ELIMINADO: No necesitamos escuchar taskCreated aquí porque ya se maneja en el store
+    // store.socket.on('taskCreated', (task) => {
+    //   console.log('📝 Nueva tarea creada:', task.title)
+    //   store.tasks.push(task) // ❌ ESTO CAUSABA LA DUPLICACIÓN
+    // })
   }
 })
 
@@ -7521,6 +8480,7 @@ const loadEmployees = async () => {
   }
 }
 
+// ✅ CORREGIDO: Función createTask mejorada para evitar duplicados
 const createTask = async () => {
   if (!newTask.value.title.trim()) {
     alert('El título de la tarea es requerido')
@@ -7532,19 +8492,29 @@ const createTask = async () => {
     return
   }
 
+  creatingTask.value = true // ✅ Mostrar loading
+
   try {
+    console.log('📝 Creando nueva tarea...')
     const task = await api.post('/tasks', {
       ...newTask.value,
       assignedBy: store.user.id
     })
     
+    console.log('✅ Tarea creada exitosamente:', task.title)
+    console.log('📋 Tarea recibida del servidor:', task)
+    
+    // ✅ La tarea ya se agregó automáticamente desde la respuesta del API
+    // NO necesitamos agregarla manualmente aquí
+    
     showDialog.value = false
     newTask.value = { title: '', description: '', assignedTo: [], dueDate: '' }
     
-    console.log('✅ Tarea creada exitosamente:', task.title)
   } catch (error) {
     console.error('❌ Error creando tarea:', error)
     alert('Error creando tarea: ' + error.message)
+  } finally {
+    creatingTask.value = false // ✅ Ocultar loading
   }
 }
 
@@ -8381,6 +9351,21 @@ export const useAppStore = defineStore('app', () => {
   const loading = ref(false)
   const authError = ref(null)
 
+  // ✅ NUEVO: Generar ID único por pestaña
+  const getSessionId = () => {
+    let sessionId = sessionStorage.getItem('app_session_id')
+    if (!sessionId) {
+      sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+      sessionStorage.setItem('app_session_id', sessionId)
+    }
+    return sessionId
+  }
+
+  // ✅ NUEVO: Prefijo único para cada pestaña
+  const getStorageKey = (key) => {
+    return `${getSessionId()}_${key}`
+  }
+
   // Computed properties
   const socketConnected = computed(() => isSocketConnected.value)
   const currentUser = computed(() => user.value)
@@ -8407,9 +9392,29 @@ export const useAppStore = defineStore('app', () => {
     }
     return employees
   })
-  
+
   const canNotify = computed(() => notificationService.canNotify())
   const notificationPermission = computed(() => notificationService.getPermissionStatus())
+
+  // ✅ NUEVA FUNCIÓN: Limpiar datos de usuario
+  const clearUserData = () => {
+    console.log('🧹 Limpiando datos del usuario anterior...')
+    tasks.value = []
+    messages.value = []
+    userLocations.value = {}
+    onlineUsers.value = {}
+    chatViewingStatus.value = {}
+    authError.value = null
+    
+    // Cerrar socket del usuario anterior
+    if (socket.value) {
+      console.log('🔌 Cerrando socket del usuario anterior')
+      socket.value.disconnect()
+      socket.value = null
+      isSocketConnected.value = false
+      initialized.value = false
+    }
+  }
 
   // Authentication
   const login = async (email, password) => {
@@ -8418,6 +9423,7 @@ export const useAppStore = defineStore('app', () => {
     
     try {
       console.log('🔐 Intentando login con:', email)
+      console.log('🆔 Session ID:', getSessionId())
       
       const response = await api.post('/auth/login', {
         email,
@@ -8426,10 +9432,12 @@ export const useAppStore = defineStore('app', () => {
       
       if (response.success) {
         console.log('✅ Login exitoso:', response.user.name)
+        
+        // ✅ CORREGIDO: Usar sessionStorage en lugar de localStorage
         setUser(response.user)
         
-        localStorage.setItem('user', JSON.stringify(response.user))
-        localStorage.setItem('token', response.token)
+        sessionStorage.setItem(getStorageKey('user'), JSON.stringify(response.user))
+        sessionStorage.setItem(getStorageKey('token'), response.token)
         
         return { success: true, user: response.user }
       } else {
@@ -8449,35 +9457,31 @@ export const useAppStore = defineStore('app', () => {
     
     const currentUserName = user.value?.name
     
-    if (socket.value) {
-      socket.value.disconnect()
-      socket.value = null
-    }
+    clearUserData()
     
-    localStorage.removeItem('user')
-    localStorage.removeItem('token')
+    // ✅ CORREGIDO: Limpiar sessionStorage de esta pestaña
+    sessionStorage.removeItem(getStorageKey('user'))
+    sessionStorage.removeItem(getStorageKey('token'))
     
     user.value = null
-    tasks.value = []
-    messages.value = []
-    userLocations.value = {}
-    onlineUsers.value = {}
-    chatViewingStatus.value = {}
-    initialized.value = false
-    isSocketConnected.value = false
-    authError.value = null
-    loading.value = false
     
     console.log(`✅ Logout completado para: ${currentUserName || 'Usuario'}`)
   }
 
+  // ✅ CORREGIDO: Función setUser mejorada
   const setUser = (userData) => {
-    if (user.value && user.value.id === userData?.id) {
-      console.log('⚠️ Usuario ya establecido, ignorando...')
-      return
+    console.log('👤 SET USER llamado con:', userData?.name)
+    console.log('🆔 Session ID:', getSessionId())
+    
+    if (user.value && user.value.id !== userData?.id) {
+      console.log(`🔄 Cambiando usuario: ${user.value.name} → ${userData.name}`)
+      clearUserData()
+    } else if (!user.value && userData) {
+      console.log('🆕 Estableciendo usuario inicial:', userData.name)
+    } else if (user.value && user.value.id === userData?.id) {
+      console.log('ℹ️ Mismo usuario, manteniendo datos existentes')
     }
     
-    console.log('👤 SET USER llamado con:', userData)
     user.value = userData
     
     if (userData && !initialized.value) {
@@ -8487,27 +9491,41 @@ export const useAppStore = defineStore('app', () => {
   }
 
   const checkAuth = () => {
-    const savedUser = localStorage.getItem('user')
-    const savedToken = localStorage.getItem('token')
+    // ✅ CORREGIDO: Usar sessionStorage con prefijo único
+    const savedUser = sessionStorage.getItem(getStorageKey('user'))
+    const savedToken = sessionStorage.getItem(getStorageKey('token'))
+    
+    console.log('🔍 Verificando autenticación...')
+    console.log('🆔 Session ID:', getSessionId())
+    console.log('📁 Usuario en sessionStorage:', savedUser ? 'Sí' : 'No')
     
     if (savedUser && savedToken) {
       try {
         const userData = JSON.parse(savedUser)
-        console.log('🔍 Usuario encontrado en localStorage:', userData.name)
+        console.log('🔍 Usuario encontrado en sessionStorage:', userData.name)
         setUser(userData)
         return true
       } catch (error) {
-        console.error('❌ Error cargando usuario de localStorage:', error)
+        console.error('❌ Error cargando usuario de sessionStorage:', error)
         logout()
         return false
+      }
+    } else {
+      console.log('🔍 No hay usuario autenticado en esta pestaña')
+      // ✅ Asegurar que no hay datos residuales
+      if (user.value) {
+        console.log('⚠️ Hay usuario en store pero no en sessionStorage, limpiando...')
+        clearUserData()
+        user.value = null
       }
     }
     return false
   }
 
-  // Socket Management - ✅ CORREGIDO COMPLETAMENTE
+  // Socket Management
   const initializeSocket = () => {
     console.log('🔌 Inicializando socket para user:', user.value?.id)
+    console.log('🆔 Session ID:', getSessionId())
     
     if (socket.value) {
       console.log('⚠️ Socket ya existe, cerrando conexión anterior...')
@@ -8539,7 +9557,6 @@ export const useAppStore = defineStore('app', () => {
     })
   }
 
-  // ✅ CORREGIDO: Setup completo de listeners
   const setupSocketListeners = () => {
     if (!socket.value) {
       console.log('❌ No hay socket para configurar listeners')
@@ -8548,7 +9565,6 @@ export const useAppStore = defineStore('app', () => {
 
     console.log('🔧 Configurando listeners de socket...')
 
-    // Remover todos los listeners antiguos primero
     const events = [
       'newMessage', 'userStatusUpdate', 'messagesRead', 
       'chatViewingStatus', 'taskCreated', 'taskUpdated', 
@@ -8559,16 +9575,13 @@ export const useAppStore = defineStore('app', () => {
       socket.value.off(event)
     })
 
-    // Configurar nuevos listeners
     socket.value.on('newMessage', (message) => {
       console.log('📨 Nuevo mensaje recibido en store:', message)
-      // Evitar duplicados
       const exists = messages.value.find(m => m.id === message.id)
       if (!exists) {
         messages.value.push(message)
         console.log('✅ Mensaje agregado al store')
         
-        // Mostrar notificación si corresponde
         if (message.receiverId === user.value?.id && document.visibilityState !== 'visible') {
           const senderName = message.senderId === 1 ? 'Administrador' : `Empleado ${message.senderId}`
           showNewMessageNotification(senderName, message.content)
@@ -8602,31 +9615,75 @@ export const useAppStore = defineStore('app', () => {
       chatViewingStatus.value[data.userId] = data.isViewing
     })
     
+    // ✅ CORREGIDO: Listener de taskCreated - EVITA DUPLICADOS
     socket.value.on('taskCreated', (task) => {
-      console.log('📝 Nueva tarea recibida:', task.title)
-      // Evitar duplicados
+      console.log('📝 Nueva tarea recibida por socket:', task.title)
+      console.log('🔍 Verificando si la tarea ya existe...')
+      
+      // ✅ VERIFICACIÓN ROBUSTA PARA EVITAR DUPLICADOS
       const exists = tasks.value.find(t => t.id === task.id)
-      if (!exists) {
-        tasks.value.push(task)
-        console.log('✅ Tarea agregada al store')
+      
+      if (exists) {
+        console.log('⚠️ Tarea ya existe en store, ignorando duplicado del socket')
+        console.log('📋 Tarea existente:', exists.title)
+        return
+      }
+      
+      // ✅ VERIFICAR SI LA TAREA ES RELEVANTE PARA EL USUARIO ACTUAL
+      let isRelevant = false
+      
+      if (user.value?.role === 'admin') {
+        // Admin ve todas las tareas
+        isRelevant = true
+        console.log('👑 Admin - Tarea relevante (ve todas)')
+      } else if (user.value) {
+        // Empleado solo ve tareas asignadas a él
+        const assignedTo = Array.isArray(task.assignedTo) 
+          ? task.assignedTo.map(id => parseInt(id))
+          : [parseInt(task.assignedTo)]
         
-        // Notificar si la tarea es para el usuario actual
-        const assignedTo = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo]
-        if (assignedTo.includes(user.value?.id) && document.visibilityState !== 'visible') {
+        isRelevant = assignedTo.includes(user.value.id)
+        console.log(`👤 Empleado ${user.value.id} - Tarea relevante: ${isRelevant}`)
+        console.log(`📋 Tarea asignada a: ${assignedTo.join(', ')}`)
+      }
+      
+      if (isRelevant) {
+        tasks.value.push(task)
+        console.log('✅ Tarea agregada desde socket (relevante para usuario)')
+        
+        // ✅ Mostrar notificación si es empleado y la tarea es para él
+        if (user.value?.role === 'employee' && document.visibilityState !== 'visible') {
           showTaskNotification(task.title, 'Administrador')
         }
+      } else {
+        console.log('ℹ️ Tarea recibida pero no relevante para usuario actual, ignorando')
       }
     })
     
     socket.value.on('taskUpdated', (task) => {
-      console.log('🔄 Tarea actualizada recibida:', task.title)
+      console.log('🔄 Tarea actualizada recibida:22', task)
       const index = tasks.value.findIndex(t => t.id === task.id)
       if (index !== -1) {
         tasks.value[index] = task
-        console.log('✅ Tarea actualizada en store')
+        console.log('✅ Tarea actualizada en store desde socket')
       } else {
-        console.log('⚠️ Tarea no encontrada en store, agregando...')
-        tasks.value.push(task)
+        console.log('⚠️ Tarea no encontrada en store, verificando relevancia...')
+        
+        // ✅ Misma verificación de relevancia que en taskCreated
+        let isRelevant = false
+        if (user.value?.role === 'admin') {
+          isRelevant = true
+        } else if (user.value) {
+          const assignedTo = Array.isArray(task.assignedTo) 
+            ? task.assignedTo.map(id => parseInt(id))
+            : [parseInt(task.assignedTo)]
+          isRelevant = assignedTo.includes(user.value.id)
+        }
+        
+        if (isRelevant) {
+          tasks.value.push(task)
+          console.log('✅ Tarea agregada desde actualización (relevante)')
+        }
       }
     })
     
@@ -8644,12 +9701,48 @@ export const useAppStore = defineStore('app', () => {
         }
         task.individualProgress[data.userId] = data.progress
         
-        // Recalcular progreso general
+        // ✅ CORREGIDO COMPLETAMENTE: Replicar la misma lógica de cálculo que en el backend
         const progressValues = Object.values(task.individualProgress)
         const totalProgress = progressValues.reduce((sum, p) => sum + p, 0)
-        task.progress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
+        const averageProgress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
         
-        console.log(`✅ Progreso actualizado: ${task.title} - ${task.progress}%`)
+        const assignedTo = Array.isArray(task.assignedTo) 
+          ? task.assignedTo.map(id => parseInt(id))
+          : [parseInt(task.assignedTo)]
+        
+        // ✅ CORREGIDO: Verificar que TODOS los asignados tengan 100%
+        const allCompleted = assignedTo.every(userId => 
+          task.individualProgress[userId] === 100
+        )
+        
+        // ✅ CORREGIDO: Contar cuántos han completado para logs informativos
+        const completedCount = assignedTo.filter(userId => 
+          task.individualProgress[userId] === 100
+        ).length
+        const totalAssigned = assignedTo.length
+        
+        console.log(`📊 Cálculo de progreso local:`)
+        console.log(`   - Asignados: ${assignedTo.join(', ')}`)
+        console.log(`   - Progresos individuales:`, task.individualProgress)
+        console.log(`   - Completados: ${completedCount}/${totalAssigned}`)
+        console.log(`   - Promedio: ${averageProgress}%`)
+        console.log(`   - Todos completados: ${allCompleted}`)
+        
+        if (allCompleted) {
+          task.status = 'completed'
+          task.progress = 100
+          console.log(`✅ Tarea COMPLETADA localmente: Todos los asignados (${completedCount}/${totalAssigned}) han terminado`)
+        } else if (averageProgress > 0 || progressValues.length > 0) {
+          task.status = 'in-progress'
+          task.progress = averageProgress
+          console.log(`🔄 Tarea EN PROGRESO localmente: ${completedCount}/${totalAssigned} completados, promedio ${averageProgress}%`)
+        } else {
+          task.status = 'pending'
+          task.progress = 0
+          console.log(`⏳ Tarea PENDIENTE localmente: Sin progreso`)
+        }
+        
+        console.log(`✅ Progreso actualizado localmente: ${task.title} - ${task.progress}%`)
       }
     })
 
@@ -8682,8 +9775,10 @@ export const useAppStore = defineStore('app', () => {
     return await notificationService.showTaskAssignedNotification(taskTitle, assignedBy)
   }
 
-  // Task Management - ✅ CORREGIDO
+  // Task Management
+  // En la función updateIndividualProgress, reemplaza el cálculo actual con:
   const updateIndividualProgress = async (taskId, progress) => {
+    console.log('777', progress)
     if (!user.value?.id) {
       console.log('❌ No hay usuario logueado para actualizar progreso')
       throw new Error('Usuario no autenticado')
@@ -8698,7 +9793,7 @@ export const useAppStore = defineStore('app', () => {
       
       console.log('✅ Respuesta del servidor:', response)
       
-      // Actualizar localmente inmediatamente para mejor UX
+      // ✅ CORREGIDO COMPLETAMENTE: Actualizar localmente con la misma lógica del backend
       const taskIndex = tasks.value.findIndex(t => t.id === taskId)
       if (taskIndex !== -1) {
         if (!tasks.value[taskIndex].individualProgress) {
@@ -8706,15 +9801,58 @@ export const useAppStore = defineStore('app', () => {
         }
         tasks.value[taskIndex].individualProgress[user.value.id] = progress
         
-        // Recalcular progreso general
-        const progressValues = Object.values(tasks.value[taskIndex].individualProgress)
-        const totalProgress = progressValues.reduce((sum, p) => sum + p, 0)
-        tasks.value[taskIndex].progress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
+        // ✅ CORREGIDO: Replicar EXACTAMENTE la misma lógica del backend
+        const assignedTo = Array.isArray(tasks.value[taskIndex].assignedTo) 
+          ? tasks.value[taskIndex].assignedTo.map(id => parseInt(id))
+          : [parseInt(tasks.value[taskIndex].assignedTo)]
         
-        console.log(`✅ Progreso actualizado localmente: ${tasks.value[taskIndex].title} - ${tasks.value[taskIndex].progress}%`)
+        const totalAssigned = assignedTo.length
+        let totalProgressSum = 0
+        let completedCount = 0
+        
+        // Calcular suma total considerando TODOS los asignados
+        assignedTo.forEach(userId => {
+          const userProgress = tasks.value[taskIndex].individualProgress[userId] || 0
+          totalProgressSum += userProgress
+          
+          if (userProgress === 100) {
+            completedCount++
+          }
+        })
+        
+        // ✅ SIEMPRE calcular el promedio entre TODOS los asignados
+        const averageProgress = Math.round(totalProgressSum / totalAssigned)
+        
+        // ✅ CORREGIDO: Solo completado si TODOS los asignados tienen 100%
+        const allCompleted = assignedTo.every(userId => 
+          tasks.value[taskIndex].individualProgress[userId] === 100
+        )
+        
+        // ✅ CORREGIDO: Determinar estado
+        let status = 'pending'
+        if (allCompleted) {
+          status = 'completed'
+        } else if (averageProgress > 0 || Object.keys(tasks.value[taskIndex].individualProgress).length > 0) {
+          status = 'in-progress'
+        }
+        
+        // ✅ ACTUALIZAR con valores CORRECTOS
+        tasks.value[taskIndex].progress = averageProgress
+        tasks.value[taskIndex].status = status
+        
+        console.log(`📊 Cálculo CORREGIDO local:`)
+        console.log(`   - Asignados: ${assignedTo.join(', ')}`)
+        console.log(`   - Progresos individuales:`, tasks.value[taskIndex].individualProgress)
+        console.log(`   - Suma total: ${totalProgressSum}`)
+        console.log(`   - Total asignados: ${totalAssigned}`)
+        console.log(`   - Promedio CORRECTO: ${averageProgress}%`)
+        console.log(`   - Completados: ${completedCount}/${totalAssigned}`)
+        console.log(`   - Todos completados: ${allCompleted}`)
+        console.log(`   - Estado: ${status}`)
+        
+        console.log(`✅ Progreso actualizado CORRECTAMENTE localmente: ${tasks.value[taskIndex].title} - ${tasks.value[taskIndex].progress}%`)
       }
       
-      // Emitir evento para notificar a otros usuarios
       if (socket.value && socket.value.connected) {
         socket.value.emit('taskProgress', {
           taskId,
@@ -8881,7 +10019,7 @@ export const useAppStore = defineStore('app', () => {
     return chatViewingStatus.value[partnerId] || false
   }
 
-  // Location Management - ✅ CORREGIDO
+  // Location Management
   const updateUserLocation = (data) => {
     userLocations.value[data.userId] = data.location
   }
@@ -8923,16 +10061,7 @@ export const useAppStore = defineStore('app', () => {
 
   const clearData = () => {
     user.value = null
-    tasks.value = []
-    messages.value = []
-    userLocations.value = {}
-    onlineUsers.value = {}
-    chatViewingStatus.value = {}
-    initialized.value = false
-    if (socket.value) {
-      socket.value.disconnect()
-      socket.value = null
-    }
+    clearUserData()
   }
 
   const reconnectSocket = () => {
@@ -9012,4 +10141,110 @@ export const useAppStore = defineStore('app', () => {
     clearData
   }
 }) 
-Total archivos: 26 
+================================= 
+src\utils\taskProgress.js 
+================================= 
+ 
+// src/utils/taskProgress.js
+
+/**
+ * Calcula el progreso y estado de una tarea de forma consistente
+ * entre frontend y backend
+ */
+export const calculateTaskProgress = (task) => {
+  if (!task.individualProgress || !task.assignedTo) {
+    return { 
+      progress: 0, 
+      status: 'pending', 
+      allCompleted: false,
+      completedCount: 0,
+      totalAssigned: 0
+    }
+  }
+
+  // ✅ CORREGIDO: Normalizar assignedTo a array
+  const assignedTo = Array.isArray(task.assignedTo) 
+    ? task.assignedTo.map(id => parseInt(id))
+    : [parseInt(task.assignedTo)]
+
+  const totalAssigned = assignedTo.length
+
+  if (totalAssigned === 0) {
+    return { 
+      progress: 0, 
+      status: 'pending', 
+      allCompleted: false,
+      completedCount: 0,
+      totalAssigned: 0
+    }
+  }
+
+  // ✅ CORREGIDO: Calcular suma de progresos considerando TODOS los asignados
+  let totalProgress = 0
+  let completedCount = 0
+  let usersWithAnyProgress = 0
+
+  assignedTo.forEach(userId => {
+    const userProgress = task.individualProgress[userId] || 0
+    totalProgress += userProgress
+    
+    if (userProgress === 100) {
+      completedCount++
+    }
+    if (userProgress > 0) {
+      usersWithAnyProgress++
+    }
+  })
+
+  // ✅ CORREGIDO: Dividir entre el TOTAL de asignados, no solo los que tienen progreso
+  const averageProgress = Math.round(totalProgress / totalAssigned)
+
+  // ✅ CORREGIDO: Solo completado si TODOS los asignados tienen 100%
+  const allCompleted = assignedTo.every(userId => 
+    task.individualProgress[userId] === 100
+  )
+
+  let status = 'pending'
+  if (allCompleted) {
+    status = 'completed'
+  } else if (averageProgress > 0 || usersWithAnyProgress > 0) {
+    status = 'in-progress'
+  }
+
+  console.log(`📊 Cálculo de progreso CORREGIDO:`)
+  console.log(`   - Asignados: ${assignedTo.join(', ')}`)
+  console.log(`   - Progresos individuales:`, task.individualProgress)
+  console.log(`   - Total progreso: ${totalProgress}`)
+  console.log(`   - Total asignados: ${totalAssigned}`)
+  console.log(`   - Promedio CORRECTO: ${averageProgress}%`)
+  console.log(`   - Completados: ${completedCount}/${totalAssigned}`)
+  console.log(`   - Todos completados: ${allCompleted}`)
+
+  return {
+    progress: allCompleted ? 100 : averageProgress,
+    status,
+    allCompleted,
+    completedCount,
+    totalAssigned
+  }
+}
+
+/**
+ * Obtiene el progreso de un usuario específico
+ */
+export const getUserProgress = (task, userId) => {
+  if (!task.individualProgress) return 0
+  return task.individualProgress[userId] || 0
+}
+
+/**
+ * Verifica si una tarea está vencida
+ */
+export const isTaskOverdue = (task) => {
+  if (!task.dueDate) return false
+  const dueDate = new Date(task.dueDate)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return dueDate < today && task.status !== 'completed'
+} 
+Total archivos: 28 

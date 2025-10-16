@@ -760,11 +760,11 @@ const setupStatusListeners = () => {
 const setupViewingStatusListeners = () => {
   if (store.socket) {
     store.socket.on('chatViewingStatus', (data) => {
-      console.log('👀 Estado de visualización recibido:', data)
+      // console.log('👀 Estado de visualización recibido:', data)
       
       if (data.userId === chatPartnerId.value) {
         isPartnerViewingChat.value = data.isViewing
-        console.log(`🔄 Partner ${data.userId} ${data.isViewing ? 'está viendo' : 'dejó de ver'} el chat`)
+        // console.log(`🔄 Partner ${data.userId} ${data.isViewing ? 'está viendo' : 'dejó de ver'} el chat`)
         
         if (!data.isViewing) {
           clearTimeout(partnerViewingTimeout.value)
