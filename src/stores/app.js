@@ -57,9 +57,9 @@ export const useAppStore = defineStore('app', () => {
       }
     }
     return employees
-  })  
+  })
 
-  const canNotify = computed(() => notificationService.canNotify())  
+  const canNotify = computed(() => notificationService.canNotify())
   const notificationPermission = computed(() => notificationService.getPermissionStatus())
 
   // ✅ NUEVA FUNCIÓN: Limpiar datos de usuario
@@ -367,11 +367,48 @@ export const useAppStore = defineStore('app', () => {
         }
         task.individualProgress[data.userId] = data.progress
         
+        // ✅ CORREGIDO COMPLETAMENTE: Replicar la misma lógica de cálculo que en el backend
         const progressValues = Object.values(task.individualProgress)
         const totalProgress = progressValues.reduce((sum, p) => sum + p, 0)
-        task.progress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
+        const averageProgress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
         
-        console.log(`✅ Progreso actualizado: ${task.title} - ${task.progress}%`)
+        const assignedTo = Array.isArray(task.assignedTo) 
+          ? task.assignedTo.map(id => parseInt(id))
+          : [parseInt(task.assignedTo)]
+        
+        // ✅ CORREGIDO: Verificar que TODOS los asignados tengan 100%
+        const allCompleted = assignedTo.every(userId => 
+          task.individualProgress[userId] === 100
+        )
+        
+        // ✅ CORREGIDO: Contar cuántos han completado para logs informativos
+        const completedCount = assignedTo.filter(userId => 
+          task.individualProgress[userId] === 100
+        ).length
+        const totalAssigned = assignedTo.length
+        
+        console.log(`📊 Cálculo de progreso local:`)
+        console.log(`   - Asignados: ${assignedTo.join(', ')}`)
+        console.log(`   - Progresos individuales:`, task.individualProgress)
+        console.log(`   - Completados: ${completedCount}/${totalAssigned}`)
+        console.log(`   - Promedio: ${averageProgress}%`)
+        console.log(`   - Todos completados: ${allCompleted}`)
+        
+        if (allCompleted) {
+          task.status = 'completed'
+          task.progress = 100
+          console.log(`✅ Tarea COMPLETADA localmente: Todos los asignados (${completedCount}/${totalAssigned}) han terminado`)
+        } else if (averageProgress > 0 || progressValues.length > 0) {
+          task.status = 'in-progress'
+          task.progress = averageProgress
+          console.log(`🔄 Tarea EN PROGRESO localmente: ${completedCount}/${totalAssigned} completados, promedio ${averageProgress}%`)
+        } else {
+          task.status = 'pending'
+          task.progress = 0
+          console.log(`⏳ Tarea PENDIENTE localmente: Sin progreso`)
+        }
+        
+        console.log(`✅ Progreso actualizado localmente: ${task.title} - ${task.progress}%`)
       }
     })
 
@@ -420,6 +457,7 @@ export const useAppStore = defineStore('app', () => {
       
       console.log('✅ Respuesta del servidor:', response)
       
+      // ✅ CORREGIDO COMPLETAMENTE: Actualizar localmente con la misma lógica del backend
       const taskIndex = tasks.value.findIndex(t => t.id === taskId)
       if (taskIndex !== -1) {
         if (!tasks.value[taskIndex].individualProgress) {
@@ -429,7 +467,43 @@ export const useAppStore = defineStore('app', () => {
         
         const progressValues = Object.values(tasks.value[taskIndex].individualProgress)
         const totalProgress = progressValues.reduce((sum, p) => sum + p, 0)
-        tasks.value[taskIndex].progress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
+        const averageProgress = progressValues.length > 0 ? Math.round(totalProgress / progressValues.length) : 0
+        
+        const assignedTo = Array.isArray(tasks.value[taskIndex].assignedTo) 
+          ? tasks.value[taskIndex].assignedTo.map(id => parseInt(id))
+          : [parseInt(tasks.value[taskIndex].assignedTo)]
+        
+        // ✅ CORREGIDO: Verificar que TODOS los asignados tengan 100%
+        const allCompleted = assignedTo.every(userId => 
+          tasks.value[taskIndex].individualProgress[userId] === 100
+        )
+        
+        // ✅ CORREGIDO: Contar cuántos han completado para logs informativos
+        const completedCount = assignedTo.filter(userId => 
+          tasks.value[taskIndex].individualProgress[userId] === 100
+        ).length
+        const totalAssigned = assignedTo.length
+        
+        console.log(`📊 Cálculo de progreso local:`)
+        console.log(`   - Asignados: ${assignedTo.join(', ')}`)
+        console.log(`   - Progresos individuales:`, tasks.value[taskIndex].individualProgress)
+        console.log(`   - Completados: ${completedCount}/${totalAssigned}`)
+        console.log(`   - Promedio: ${averageProgress}%`)
+        console.log(`   - Todos completados: ${allCompleted}`)
+        
+        if (allCompleted) {
+          tasks.value[taskIndex].status = 'completed'
+          tasks.value[taskIndex].progress = 100
+          console.log(`✅ Tarea COMPLETADA localmente: Todos los asignados (${completedCount}/${totalAssigned}) han terminado`)
+        } else if (averageProgress > 0 || progressValues.length > 0) {
+          tasks.value[taskIndex].status = 'in-progress'
+          tasks.value[taskIndex].progress = averageProgress
+          console.log(`🔄 Tarea EN PROGRESO localmente: ${completedCount}/${totalAssigned} completados, promedio ${averageProgress}%`)
+        } else {
+          tasks.value[taskIndex].status = 'pending'
+          tasks.value[taskIndex].progress = 0
+          console.log(`⏳ Tarea PENDIENTE localmente: Sin progreso`)
+        }
         
         console.log(`✅ Progreso actualizado localmente: ${tasks.value[taskIndex].title} - ${tasks.value[taskIndex].progress}%`)
       }
