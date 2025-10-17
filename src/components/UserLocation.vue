@@ -84,14 +84,15 @@ const store = useAppStore()
 const loading = ref(false)
 const currentLocation = ref(null)
 
-const employees = ref([])
+// ✅ CORREGIDO: Obtener lista de empleados
+const employees = computed(() => [
+  { id: 2, name: 'Juan Pérez' },
+  { id: 3, name: 'María García' },
+  { id: 4, name: 'Carlos López' }
+])
 
 onMounted(async () => {
   console.log('📍 UserLocation montado')
-  
-  if (props.isAdmin) {
-    await loadEmployees()
-  }
   
   // ✅ CORREGIDO: Configurar listener de ubicaciones
   if (store.socket) {
@@ -101,20 +102,6 @@ onMounted(async () => {
     })
   }
 })
-
-const loadEmployees = async () => {
-  try {
-    // En una implementación real, cargaríamos desde API
-    employees.value = [
-      { id: 2, name: 'Juan Pérez' },
-      { id: 3, name: 'María García' },
-      { id: 4, name: 'Carlos López' }
-    ]
-    console.log('✅ Empleados cargados para ubicaciones')
-  } catch (error) {
-    console.error('❌ Error cargando empleados:', error)
-  }
-}
 
 const getLocation = () => {
   loading.value = true
@@ -139,7 +126,7 @@ const getLocation = () => {
       currentLocation.value = location
       console.log('📍 Ubicación obtenida:', location)
       
-      // ✅ CORREGIDO: Usar la nueva función sendUserLocation
+      // ✅ CORREGIDO: Enviar ubicación al servidor
       store.sendUserLocation(location)
       
       loading.value = false
@@ -174,7 +161,6 @@ const getLocation = () => {
 }
 
 const getUserName = (userId) => {
-  if (userId == 1) return 'Administrador'
   const employee = employees.value.find(emp => emp.id == userId)
   return employee ? employee.name : `Usuario ${userId}`
 }

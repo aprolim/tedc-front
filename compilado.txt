@@ -246,7 +246,7 @@ define(['./workbox-ce4f0d5f'], (function (workbox) { 'use strict';
     "revision": "3ca0b8505b4bec776b69afdba2768812"
   }, {
     "url": "index.html",
-    "revision": "0.h2cgk3fjng8"
+    "revision": "0.butr4th61o"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
@@ -5641,15 +5641,15 @@ src\components\AdminMap.vue
       <v-card class="mb-4">
         <v-card-title class="d-flex align-center">
           <v-icon color="primary" class="mr-2">mdi-map-marker</v-icon>
-          Mapa de Ubicaciones del Equipo
+          Mapa de Ubicaciones del Equipo - Cochabamba
           <v-spacer></v-spacer>
-          <v-btn @click="refreshLocations" color="primary" class="mr-2">
+          <v-btn @click="refreshMap" color="primary" class="mr-2" :loading="refreshing">
             <v-icon left>mdi-refresh</v-icon>
-            Actualizar
+            Recargar Mapa
           </v-btn>
-          <v-btn @click="centerMapOnAllUsers" color="green" class="mr-2" :disabled="!mapReady || employeesWithLocations.length === 0">
-            <v-icon left>mdi-target</v-icon>
-            Centrar Mapa
+          <v-btn @click="centerMapOnCochabamba" color="orange" class="mr-2">
+            <v-icon left>mdi-home</v-icon>
+            Centrar en Cochabamba
           </v-btn>
           <v-btn @click="$router.push('/admin')" variant="text">
             <v-icon left>mdi-arrow-left</v-icon>
@@ -5662,15 +5662,25 @@ src\components\AdminMap.vue
               <v-icon start>mdi-account-multiple</v-icon>
               {{ employeesWithLocations.length }} empleados con ubicación
             </v-chip>
-            <v-chip :color="mapReady ? 'blue' : 'orange'" class="mr-2 mb-2">
+            <v-chip :color="getMapStatusColor()" class="mr-2 mb-2">
               <v-icon start>mdi-map</v-icon>
-              {{ mapReady ? 'Mapa listo' : 'Cargando mapa...' }}
+              {{ getMapStatusText() }}
             </v-chip>
-            <v-chip v-if="mapError" color="red" class="mr-2 mb-2">
-              <v-icon start>mdi-alert</v-icon>
-              Modo estático
+            <v-chip color="info" class="mr-2 mb-2">
+              <v-icon start>mdi-map-marker-radius</v-icon>
+              Hotel Regina, Tiquipaya
             </v-chip>
           </div>
+          
+          <!-- Información de diagnóstico -->
+          <v-alert v-if="showDiagnosticInfo" type="info" variant="tonal" density="compact" class="mt-2">
+            <div class="text-caption">
+              <strong>Diagnóstico:</strong> 
+              Tiles cargados: {{ loadedTiles }}/{{ totalTiles }} | 
+              Errores: {{ errorTiles }} |
+              Proveedor: {{ currentTileProvider }}
+            </div>
+          </v-alert>
         </v-card-text>
       </v-card>
 
@@ -5683,9 +5693,20 @@ src\components\AdminMap.vue
               <v-icon left>mdi-map</v-icon>
               Mapa de Ubicaciones
               <v-spacer></v-spacer>
-              <span class="text-caption text-grey">
-                Zoom: {{ mapZoom }}x
-              </span>
+              <v-btn-toggle v-model="currentTileProvider" density="compact" @update:model-value="changeTileProvider">
+                <v-btn value="osm" size="small">
+                  <span class="text-caption">OSM</span>
+                </v-btn>
+                <v-btn value="carto" size="small">
+                  <span class="text-caption">Carto</span>
+                </v-btn>
+                <v-btn value="esri" size="small">
+                  <span class="text-caption">ESRI</span>
+                </v-btn>
+                <v-btn value="google" size="small">
+                  <span class="text-caption">Google</span>
+                </v-btn>
+              </v-btn-toggle>
             </v-card-title>
             <v-card-text class="pa-0">
               <div 
@@ -5693,20 +5714,66 @@ src\components\AdminMap.vue
                 class="map-container"
                 :style="{ height: mapHeight + 'px' }"
               >
-                <div v-if="!mapReady" class="map-loading">
+                <!-- Estado de carga -->
+                <div v-if="mapLoading" class="map-loading">
                   <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
                   <div class="mt-4">Cargando mapa...</div>
+                  <div class="text-caption text-grey mt-2">Usando: {{ getProviderName(currentTileProvider) }}</div>
+                  <v-btn @click="forceRetry" color="primary" size="small" class="mt-4">
+                    <v-icon left>mdi-restart</v-icon>
+                    Reintentar
+                  </v-btn>
+                </div>
+                
+                <!-- Estado de error -->
+                <div v-else-if="mapError" class="map-error-state">
+                  <v-icon size="64" color="error" class="mb-4">mdi-alert-circle</v-icon>
+                  <div class="text-h6 mb-2">Error al cargar el mapa</div>
+                  <div class="text-body-1 text-grey mb-4">
+                    No se pudieron cargar los tiles del mapa. Posibles causas:
+                  </div>
+                  <v-list density="compact" class="text-left mb-4">
+                    <v-list-item>
+                      <template v-slot:prepend>
+                        <v-icon color="grey">mdi-wifi-off</v-icon>
+                      </template>
+                      <v-list-item-title>Problemas de conexión a internet</v-list-item-title>
+                    </v-list-item>
+                    <v-list-item>
+                      <template v-slot:prepend>
+                        <v-icon color="grey">mdi-shield-off</v-icon>
+                      </template>
+                      <v-list-item-title>Bloqueo por firewall o CORS</v-list-item-title>
+                    </v-list-item>
+                    <v-list-item>
+                      <template v-slot:prepend>
+                        <v-icon color="grey">mdi-server-off</v-icon>
+                      </template>
+                      <v-list-item-title>Servidores de tiles no disponibles</v-list-item-title>
+                    </v-list-item>
+                  </v-list>
+                  
+                  <div class="error-actions">
+                    <v-btn @click="forceRetry" color="primary" class="mr-2">
+                      <v-icon left>mdi-restart</v-icon>
+                      Reintentar
+                    </v-btn>
+                    <v-btn @click="showDiagnosticInfo = !showDiagnosticInfo" variant="text">
+                      <v-icon left>mdi-information</v-icon>
+                      Info. Diagnóstico
+                    </v-btn>
+                  </div>
                 </div>
                 
                 <!-- Mapa estático como fallback -->
-                <div v-if="mapError && mapReady" class="static-map-fallback">
+                <div v-else-if="useStaticMap" class="static-map-fallback">
                   <v-icon size="64" color="grey-lighten-1" class="mb-4">mdi-map</v-icon>
-                  <div class="text-h6 mb-2">Mapa en Modo Estático</div>
+                  <div class="text-h6 mb-2">Modo Mapa Estático</div>
                   <div class="text-body-1 text-grey mb-4">
-                    Mostrando ubicaciones en lista debido a problemas de carga
+                    Usando vista estática debido a problemas de conexión
                   </div>
                   
-                  <!-- Lista de ubicaciones en modo estático -->
+                  <!-- Lista de ubicaciones -->
                   <v-card variant="outlined" class="mx-auto" max-width="600">
                     <v-card-title>
                       <v-icon color="primary" class="mr-2">mdi-map-marker</v-icon>
@@ -5727,9 +5794,6 @@ src\components\AdminMap.vue
                           
                           <v-list-item-title class="font-weight-medium">
                             {{ employee.name }}
-                            <v-chip size="small" :color="store.isUserOnline(employee.id) ? 'green' : 'red'" class="ml-2">
-                              {{ store.isUserOnline(employee.id) ? 'En línea' : 'Desconectado' }}
-                            </v-chip>
                           </v-list-item-title>
                           
                           <v-list-item-subtitle>
@@ -5762,55 +5826,50 @@ src\components\AdminMap.vue
 
         <!-- Controles y lista -->
         <v-col cols="12" md="3">
-          <!-- Controles del mapa -->
+          <!-- Estado del mapa -->
           <v-card class="mb-4">
             <v-card-title>
-              <v-icon left>mdi-cog</v-icon>
-              Controles
+              <v-icon left>mdi-information</v-icon>
+              Estado del Mapa
             </v-card-title>
             <v-card-text>
+              <v-list density="compact">
+                <v-list-item>
+                  <v-list-item-title>Proveedor actual</v-list-item-title>
+                  <v-list-item-subtitle>{{ getProviderName(currentTileProvider) }}</v-list-item-subtitle>
+                </v-list-item>
+                
+                <v-list-item>
+                  <v-list-item-title>Tiles cargados</v-list-item-title>
+                  <v-list-item-subtitle>
+                    <v-progress-linear
+                      :model-value="(loadedTiles / Math.max(totalTiles, 1)) * 100"
+                      color="primary"
+                      height="8"
+                      class="mt-1"
+                    />
+                    {{ loadedTiles }} / {{ totalTiles }}
+                  </v-list-item-subtitle>
+                </v-list-item>
+                
+                <v-list-item>
+                  <v-list-item-title>Centro actual</v-list-item-title>
+                  <v-list-item-subtitle class="text-caption">
+                    {{ currentCenter ? `${currentCenter.lat.toFixed(4)}, ${currentCenter.lng.toFixed(4)}` : 'Cargando...' }}
+                  </v-list-item-subtitle>
+                </v-list-item>
+              </v-list>
+              
               <v-btn 
-                @click="centerMapOnAllUsers" 
-                color="primary" 
+                @click="centerMapOnCochabamba" 
+                color="orange" 
                 block 
-                class="mb-3"
-                :disabled="!mapReady || employeesWithLocations.length === 0 || mapError"
+                class="mt-2"
+                :disabled="!mapReady"
               >
-                <v-icon left>mdi-target</v-icon>
-                Centrar en Todos
+                <v-icon left>mdi-home</v-icon>
+                Centro Cochabamba
               </v-btn>
-
-              <v-slider
-                v-model="mapZoom"
-                label="Zoom del Mapa"
-                min="10"
-                max="18"
-                step="1"
-                thumb-label
-                @update:model-value="updateMapZoom"
-                :disabled="mapError"
-                class="mb-4"
-              ></v-slider>
-
-              <v-switch
-                v-model="showUserNames"
-                label="Mostrar nombres"
-                color="primary"
-                class="mb-2"
-                :disabled="mapError"
-              ></v-switch>
-
-              <div v-if="mapError" class="error-warning">
-                <v-alert type="warning" variant="tonal" density="compact" class="mt-2">
-                  <div class="text-caption">
-                    El mapa interactivo no está disponible. Usando modo estático.
-                  </div>
-                </v-alert>
-              </div>
-
-              <div class="text-caption text-grey mt-3">
-                {{ mapError ? 'Ubicaciones mostradas en lista' : 'Haz clic en los marcadores para ver detalles' }}
-              </div>
             </v-card-text>
           </v-card>
 
@@ -5826,7 +5885,6 @@ src\components\AdminMap.vue
                   v-for="employee in employeesWithLocations"
                   :key="employee.id"
                   @click="focusOnEmployee(employee)"
-                  :class="{ 'selected-employee': selectedEmployee?.id === employee.id }"
                   class="employee-map-item"
                 >
                   <template v-slot:prepend>
@@ -5849,10 +5907,6 @@ src\components\AdminMap.vue
                     </v-icon>
                     {{ store.isUserOnline(employee.id) ? 'En línea' : 'Desconectado' }}
                   </v-list-item-subtitle>
-
-                  <template v-slot:append>
-                    <v-icon color="primary" size="small">mdi-chevron-right</v-icon>
-                  </template>
                 </v-list-item>
 
                 <v-list-item v-if="employeesWithLocations.length === 0">
@@ -5867,76 +5921,6 @@ src\components\AdminMap.vue
         </v-col>
       </v-row>
     </v-container>
-
-    <!-- Dialog de información del empleado -->
-    <v-dialog v-model="showEmployeeDialog" max-width="400">
-      <v-card v-if="selectedEmployee">
-        <v-card-title class="d-flex align-center">
-          <v-avatar :color="getEmployeeColor(selectedEmployee.id)" size="40" class="mr-3">
-            <span class="text-white">{{ getInitials(selectedEmployee.name) }}</span>
-          </v-avatar>
-          {{ selectedEmployee.name }}
-        </v-card-title>
-        
-        <v-card-text>
-          <v-list density="compact">
-            <v-list-item>
-              <template v-slot:prepend>
-                <v-icon color="grey">mdi-map-marker</v-icon>
-              </template>
-              <v-list-item-title>Coordenadas</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ selectedEmployee.location.latitude.toFixed(6) }}, 
-                {{ selectedEmployee.location.longitude.toFixed(6) }}
-              </v-list-item-subtitle>
-            </v-list-item>
-
-            <v-list-item>
-              <template v-slot:prepend>
-                <v-icon color="grey">mdi-clock</v-icon>
-              </template>
-              <v-list-item-title>Última actualización</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ formatTime(selectedEmployee.location.lastUpdate) }}
-              </v-list-item-subtitle>
-            </v-list-item>
-
-            <v-list-item>
-              <template v-slot:prepend>
-                <v-icon :color="store.isUserOnline(selectedEmployee.id) ? 'green' : 'red'">mdi-circle</v-icon>
-              </template>
-              <v-list-item-title>Estado</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ store.isUserOnline(selectedEmployee.id) ? 'En línea' : 'Desconectado' }}
-              </v-list-item-subtitle>
-            </v-list-item>
-
-            <v-list-item>
-              <template v-slot:prepend>
-                <v-icon color="grey">mdi-office-building</v-icon>
-              </template>
-              <v-list-item-title>Departamento</v-list-item-title>
-              <v-list-item-subtitle>
-                {{ selectedEmployee.department }}
-              </v-list-item-subtitle>
-            </v-list-item>
-          </v-list>
-        </v-card-text>
-
-        <v-card-actions>
-          <v-spacer></v-spacer>
-          <v-btn @click="showEmployeeDialog = false" variant="text">Cerrar</v-btn>
-          <v-btn 
-            @click="centerMapOnEmployee(selectedEmployee)" 
-            color="primary"
-            :disabled="mapError"
-          >
-            <v-icon left>mdi-target</v-icon>
-            {{ mapError ? 'Mapa no disponible' : 'Centrar en Mapa' }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
   </div>
 </template>
 
@@ -5945,34 +5929,82 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useAppStore } from '../stores/app.js'
 import { useRouter } from 'vue-router'
 
-// ✅ DECLARAR STORE Y ROUTER PRIMERO
 const store = useAppStore()
 const router = useRouter()
 
 // Estados reactivos
 const mapContainer = ref(null)
 const map = ref(null)
-const mapReady = ref(false)
+const mapLoading = ref(true)
 const mapError = ref(false)
-const selectedEmployee = ref(null)
-const showEmployeeDialog = ref(false)
-const mapZoom = ref(13)
-const showUserNames = ref(true)
+const mapReady = ref(false)
+const useStaticMap = ref(false)
+const refreshing = ref(false)
+const showDiagnosticInfo = ref(false)
 
-// Variables para Leaflet (si está disponible)
+// Estados para tiles
+const loadedTiles = ref(0)
+const totalTiles = ref(0)
+const errorTiles = ref(0)
+const currentTileProvider = ref('osm')
+const currentCenter = ref(null)
+
+// Variables para Leaflet
 let L = null
+let currentTileLayer = null
 let markers = []
 let markerLayer = null
 
-// Computed - ✅ MOVER DESPUÉS DE DECLARAR STORE
+// Coordenadas del Hotel Regina en Tiquipaya, Cochabamba
+const COCHABAMBA_CENTER = {
+  lat: -17.3386, 
+  lng: -66.2158
+}
+
+// Proveedores de tiles con múltiples opciones
+const tileProviders = {
+  osm: {
+    name: 'OpenStreetMap',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19
+  },
+  carto: {
+    name: 'CartoDB Voyager',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attribution: '© OpenStreetMap, © CartoDB',
+    maxZoom: 20
+  },
+  esri: {
+    name: 'ESRI World Street',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    attribution: '© Esri',
+    maxZoom: 19
+  },
+  google: {
+    name: 'Google Maps',
+    url: 'https://mt{0-3}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    attribution: '© Google',
+    maxZoom: 20,
+    subdomains: ['0', '1', '2', '3']
+  }
+}
+
+// Computed
 const employeesWithLocations = computed(() => {
   const employees = []
   
-  for (const [userId, location] of Object.entries(store.userLocations)) {
-    const user = getEmployeeById(parseInt(userId))
-    if (user) {
+  const allEmployees = [
+    { id: 2, name: 'Juan Pérez', department: 'Ventas' },
+    { id: 3, name: 'María García', department: 'Marketing' },
+    { id: 4, name: 'Carlos López', department: 'IT' }
+  ]
+  
+  for (const employee of allEmployees) {
+    const location = store.userLocations[employee.id]
+    if (location && location.latitude && location.longitude) {
       employees.push({
-        ...user,
+        ...employee,
         location
       })
     }
@@ -5986,16 +6018,6 @@ const mapHeight = computed(() => {
 })
 
 // Métodos
-const getEmployeeById = (id) => {
-  const employees = {
-    1: { id: 1, name: 'Administrador', department: 'Administración' },
-    2: { id: 2, name: 'Juan Pérez', department: 'Ventas' },
-    3: { id: 3, name: 'María García', department: 'Marketing' },
-    4: { id: 4, name: 'Carlos López', department: 'IT' }
-  }
-  return employees[id]
-}
-
 const getInitials = (name) => {
   if (!name) return '?'
   return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
@@ -6014,74 +6036,217 @@ const getEmployeeColor = (userId) => {
   return colors[userId % colors.length]
 }
 
+const getProviderName = (provider) => {
+  return tileProviders[provider]?.name || 'Desconocido'
+}
+
+const getMapStatusColor = () => {
+  if (mapError.value) return 'red'
+  if (useStaticMap.value) return 'orange'
+  if (mapReady.value) return 'green'
+  return 'blue'
+}
+
+const getMapStatusText = () => {
+  if (mapError.value) return 'Error'
+  if (useStaticMap.value) return 'Modo estático'
+  if (mapReady.value) return 'Conectado'
+  return 'Conectando...'
+}
+
 const focusOnEmployee = (employee) => {
-  selectedEmployee.value = employee
-  showEmployeeDialog.value = true
-  console.log('👤 Empleado seleccionado:', employee.name)
+  if (mapReady.value && !useStaticMap.value) {
+    centerMapOnEmployee(employee)
+  }
 }
 
 // Funciones del mapa
 const initMap = async () => {
   if (!mapContainer.value) return
 
-  console.log('🗺️ Intentando inicializar mapa interactivo...')
+  console.log('🗺️ Inicializando mapa...')
+  mapLoading.value = true
+  mapError.value = false
+  useStaticMap.value = false
 
   try {
-    // Intentar cargar Leaflet dinámicamente
+    // Cargar Leaflet
     const leafletModule = await import('leaflet')
     L = leafletModule.default
     
-    // Configurar iconos de Leaflet
+    // Configurar iconos
     delete L.Icon.Default.prototype._getIconUrl
     L.Icon.Default.mergeOptions({
-      iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-      iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+      iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+      iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
     })
 
     // Crear mapa
-    map.value = L.map(mapContainer.value).setView([19.4326, -99.1332], mapZoom.value)
-
-    // Agregar capa de tiles con manejo de errores
-    const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-      maxZoom: 18
-    }).addTo(map.value)
-
-    // Manejar errores de tiles
-    tileLayer.on('tileerror', (error) => {
-      console.log('⚠️ Error cargando tile del mapa:', error)
+    map.value = L.map(mapContainer.value, {
+      center: [COCHABAMBA_CENTER.lat, COCHABAMBA_CENTER.lng],
+      zoom: 14,
+      zoomControl: false // Lo agregaremos después
     })
 
+    // Agregar controles de zoom
+    L.control.zoom({
+      position: 'topright'
+    }).addTo(map.value)
+
+    // Configurar el proveedor de tiles actual
+    await setupTileLayer()
+
     // Configurar eventos
-    map.value.on('zoomend', () => {
+    map.value.on('moveend', () => {
       if (map.value) {
-        mapZoom.value = map.value.getZoom()
+        const center = map.value.getCenter()
+        currentCenter.value = {
+          lat: center.lat,
+          lng: center.lng
+        }
       }
     })
 
-    mapReady.value = true
-    console.log('✅ Mapa interactivo inicializado correctamente')
+    // Agregar marcador del Hotel Regina
+    L.marker([COCHABAMBA_CENTER.lat, COCHABAMBA_CENTER.lng])
+      .addTo(map.value)
+      .bindPopup(`
+        <div style="min-width: 200px;">
+          <strong>🏨 Hotel Regina</strong><br/>
+          <small>Tiquipaya, Cochabamba</small><br/>
+          <hr style="margin: 8px 0;">
+          📍 Punto de referencia central
+        </div>
+      `)
 
-    // Agregar marcadores
+    mapReady.value = true
+    mapLoading.value = false
+    currentCenter.value = COCHABAMBA_CENTER
+    
+    console.log('✅ Mapa inicializado correctamente')
+    
+    // Agregar marcadores de empleados
     nextTick(() => {
       updateMarkers()
     })
 
   } catch (error) {
-    console.error('❌ Error cargando mapa interactivo:', error)
-    initStaticMap()
+    console.error('❌ Error crítico inicializando mapa:', error)
+    mapError.value = true
+    mapLoading.value = false
+    useStaticMap.value = true
   }
 }
 
-const initStaticMap = () => {
-  console.log('🗺️ Inicializando mapa estático como fallback')
-  mapReady.value = true
-  mapError.value = true
+const setupTileLayer = async () => {
+  if (!map.value || !L) return
+
+  // Remover capa anterior si existe
+  if (currentTileLayer) {
+    map.value.removeLayer(currentTileLayer)
+  }
+
+  const provider = tileProviders[currentTileProvider.value]
+  
+  if (!provider) {
+    console.error('❌ Proveedor de tiles no encontrado:', currentTileProvider.value)
+    return
+  }
+
+  console.log(`🗺️ Configurando tiles: ${provider.name}`)
+
+  // Reiniciar contadores
+  loadedTiles.value = 0
+  totalTiles.value = 0
+  errorTiles.value = 0
+
+  try {
+    // Crear capa de tiles
+    currentTileLayer = L.tileLayer(provider.url, {
+      attribution: provider.attribution,
+      maxZoom: provider.maxZoom,
+      subdomains: provider.subdomains || ['a', 'b', 'c'],
+      detectRetina: true,
+      crossOrigin: true // Importante para CORS
+    })
+
+    // Eventos para tracking de tiles
+    currentTileLayer.on('loading', () => {
+      console.log('🔄 Cargando tiles...')
+    })
+
+    currentTileLayer.on('load', () => {
+      loadedTiles.value++
+      console.log(`✅ Tile cargado: ${loadedTiles.value}`)
+    })
+
+    currentTileLayer.on('tileload', (e) => {
+      loadedTiles.value++
+      totalTiles.value = Math.max(totalTiles.value, loadedTiles.value + errorTiles.value)
+    })
+
+    currentTileLayer.on('tileerror', (e) => {
+      errorTiles.value++
+      console.warn('❌ Error cargando tile:', e)
+      
+      // Si hay muchos errores, cambiar de proveedor automáticamente
+      if (errorTiles.value >= 5) {
+        console.log('🔄 Demasiados errores, cambiando proveedor...')
+        switchToNextProvider()
+      }
+    })
+
+    // Agregar al mapa
+    currentTileLayer.addTo(map.value)
+
+    // Esperar a que se carguen algunos tiles
+    await new Promise((resolve) => {
+      const checkTiles = setInterval(() => {
+        if (loadedTiles.value > 3 || errorTiles.value > 5) {
+          clearInterval(checkTiles)
+          resolve()
+        }
+      }, 500)
+
+      // Timeout después de 10 segundos
+      setTimeout(() => {
+        clearInterval(checkTiles)
+        resolve()
+      }, 10000)
+    })
+
+    // Verificar si la carga fue exitosa
+    if (loadedTiles.value === 0 && errorTiles.value > 0) {
+      throw new Error('No se pudieron cargar los tiles')
+    }
+
+    console.log(`✅ Tiles configurados: ${loadedTiles.value} cargados, ${errorTiles.value} errores`)
+
+  } catch (error) {
+    console.error('❌ Error configurando tiles:', error)
+    throw error
+  }
+}
+
+const switchToNextProvider = () => {
+  const providers = Object.keys(tileProviders)
+  const currentIndex = providers.indexOf(currentTileProvider.value)
+  const nextIndex = (currentIndex + 1) % providers.length
+  currentTileProvider.value = providers[nextIndex]
+  
+  console.log(`🔄 Cambiando a proveedor: ${tileProviders[currentTileProvider.value].name}`)
+  setupTileLayer()
+}
+
+const changeTileProvider = () => {
+  if (mapReady.value) {
+    setupTileLayer()
+  }
 }
 
 const updateMarkers = () => {
-  if (!map.value || !L || mapError.value) return
+  if (!map.value || !L || useStaticMap.value) return
 
   try {
     // Limpiar marcadores anteriores
@@ -6108,85 +6273,80 @@ const updateMarkers = () => {
           </div>
         `)
       
-      marker.on('click', () => {
-        selectedEmployee.value = employee
-        showEmployeeDialog.value = true
-      })
-
       markers.push(marker)
     })
 
-    console.log(`📍 ${employeesWithLocations.value.length} marcadores agregados al mapa`)
-    
-    // Centrar el mapa si hay marcadores
-    if (markers.length > 0) {
-      centerMapOnAllUsers()
-    }
+    console.log(`📍 ${employeesWithLocations.value.length} marcadores agregados`)
 
   } catch (error) {
     console.error('❌ Error actualizando marcadores:', error)
   }
 }
 
-const centerMapOnAllUsers = () => {
-  if (!map.value || markers.length === 0 || mapError.value) return
-
-  try {
-    const group = L.featureGroup(markers)
-    map.value.fitBounds(group.getBounds().pad(0.1), { 
-      maxZoom: 15,
+const centerMapOnCochabamba = () => {
+  if (map.value && !useStaticMap.value) {
+    map.value.setView([COCHABAMBA_CENTER.lat, COCHABAMBA_CENTER.lng], 14, { 
       animate: true
     })
-    console.log('🎯 Mapa centrado en todos los usuarios')
-  } catch (error) {
-    console.error('❌ Error centrando mapa:', error)
   }
 }
 
 const centerMapOnEmployee = (employee) => {
-  if (!map.value || mapError.value) return
-
-  try {
+  if (map.value && !useStaticMap.value) {
     const { latitude, longitude } = employee.location
-    map.value.setView([latitude, longitude], 16, { animate: true })
-    console.log(`🎯 Mapa centrado en: ${employee.name}`)
-  } catch (error) {
-    console.error('❌ Error centrando en empleado:', error)
+    map.value.setView([latitude, longitude], 16, { 
+      animate: true
+    })
   }
 }
 
-const updateMapZoom = (zoom) => {
-  if (map.value && !mapError.value) {
-    map.value.setZoom(zoom)
+const refreshMap = async () => {
+  refreshing.value = true
+  console.log('🔄 Recargando mapa...')
+  
+  // Destruir mapa existente
+  if (map.value) {
+    map.value.remove()
+    map.value = null
   }
+  
+  // Reiniciar estados
+  mapReady.value = false
+  mapError.value = false
+  useStaticMap.value = false
+  loadedTiles.value = 0
+  totalTiles.value = 0
+  errorTiles.value = 0
+  
+  // Re-inicializar
+  await initMap()
+  refreshing.value = false
 }
 
-const refreshLocations = () => {
-  console.log('🔄 Actualizando ubicaciones...')
-  if (!mapError.value) {
-    updateMarkers()
+const forceRetry = () => {
+  if (useStaticMap.value) {
+    useStaticMap.value = false
+    initMap()
+  } else {
+    switchToNextProvider()
   }
 }
 
 // Lifecycle
 onMounted(() => {
   console.log('🗺️ Componente AdminMap montado')
-  
-  // Inicializar mapa después de un pequeño delay
-  setTimeout(() => {
-    initMap()
-  }, 100)
+  initMap()
 })
 
 onUnmounted(() => {
-  if (map.value && !mapError.value) {
+  if (map.value) {
     map.value.remove()
   }
 })
 
 // Watchers
 watch(employeesWithLocations, () => {
-  if (mapReady.value && !mapError.value) {
+  if (mapReady.value && !useStaticMap.value) {
     updateMarkers()
   }
 })
@@ -6202,19 +6362,11 @@ watch(employeesWithLocations, () => {
   background: #f5f5f5;
   border-radius: 8px;
   overflow: hidden;
+  border: 2px solid #e0e0e0;
+  min-height: 500px;
 }
 
-.map-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: #666;
-  background: #fafafa;
-}
-
-.static-map-fallback {
+.map-loading, .map-error-state, .static-map-fallback {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -6222,34 +6374,44 @@ watch(employeesWithLocations, () => {
   height: 100%;
   padding: 40px;
   text-align: center;
+}
+
+.map-loading {
   background: #fafafa;
+  color: #666;
+}
+
+.map-error-state {
+  background: #fff3e0;
+  color: #d84315;
+}
+
+.static-map-fallback {
+  background: #f5f5f5;
+  color: #666;
 }
 
 .employee-map-item {
-  border-left: 4px solid transparent;
-  transition: all 0.3s ease;
   cursor: pointer;
-  padding: 8px 16px;
+  transition: all 0.3s ease;
 }
 
 .employee-map-item:hover {
   background-color: rgba(25, 118, 210, 0.04);
-  border-left-color: #1976d2;
 }
 
-.employee-map-item.selected-employee {
-  background-color: rgba(25, 118, 210, 0.08);
-  border-left-color: #1976d2;
+.error-actions {
+  margin-top: 16px;
 }
 
-.error-warning {
-  margin-top: 8px;
+/* Estilos para Leaflet */
+:deep(.leaflet-container) {
+  font-family: 'Roboto', sans-serif;
+  background: #f8f9fa;
 }
 
-/* Estilos para Leaflet cuando está disponible */
 :deep(.leaflet-popup-content) {
   margin: 8px 12px;
-  font-family: 'Roboto', sans-serif;
 }
 
 :deep(.leaflet-popup-content-wrapper) {
@@ -8815,14 +8977,15 @@ const store = useAppStore()
 const loading = ref(false)
 const currentLocation = ref(null)
 
-const employees = ref([])
+// ✅ CORREGIDO: Obtener lista de empleados
+const employees = computed(() => [
+  { id: 2, name: 'Juan Pérez' },
+  { id: 3, name: 'María García' },
+  { id: 4, name: 'Carlos López' }
+])
 
 onMounted(async () => {
   console.log('📍 UserLocation montado')
-  
-  if (props.isAdmin) {
-    await loadEmployees()
-  }
   
   // ✅ CORREGIDO: Configurar listener de ubicaciones
   if (store.socket) {
@@ -8832,20 +8995,6 @@ onMounted(async () => {
     })
   }
 })
-
-const loadEmployees = async () => {
-  try {
-    // En una implementación real, cargaríamos desde API
-    employees.value = [
-      { id: 2, name: 'Juan Pérez' },
-      { id: 3, name: 'María García' },
-      { id: 4, name: 'Carlos López' }
-    ]
-    console.log('✅ Empleados cargados para ubicaciones')
-  } catch (error) {
-    console.error('❌ Error cargando empleados:', error)
-  }
-}
 
 const getLocation = () => {
   loading.value = true
@@ -8870,7 +9019,7 @@ const getLocation = () => {
       currentLocation.value = location
       console.log('📍 Ubicación obtenida:', location)
       
-      // ✅ CORREGIDO: Usar la nueva función sendUserLocation
+      // ✅ CORREGIDO: Enviar ubicación al servidor
       store.sendUserLocation(location)
       
       loading.value = false
@@ -8905,7 +9054,6 @@ const getLocation = () => {
 }
 
 const getUserName = (userId) => {
-  if (userId == 1) return 'Administrador'
   const employee = employees.value.find(emp => emp.id == userId)
   return employee ? employee.name : `Usuario ${userId}`
 }
